@@ -1,6 +1,8 @@
 "use client";
-import { motion, AnimatePresence } from "framer-motion";
-import { useOrionStore, WeatherData } from "@/lib/store";
+
+import type { ReactNode } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { WeatherData, useOrionStore } from "@/lib/store";
 
 export default function WidgetOverlay() {
   const activeWidget = useOrionStore((s) => s.activeWidget);
@@ -17,37 +19,35 @@ export default function WidgetOverlay() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.25 }}
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: "rgba(0, 6, 18, 0.82)", backdropFilter: "blur(10px)" }}
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8 sm:px-8"
+          style={{
+            background:
+              "radial-gradient(circle at center, rgba(24,43,94,0.55), rgba(3,7,18,0.96) 60%)",
+          }}
           onClick={() => setActiveWidget(null)}
         >
+
           <motion.div
-            initial={{ scale: 0.88, y: 32, opacity: 0 }}
+            initial={{ scale: 0.92, y: 28, opacity: 0 }}
             animate={{ scale: 1, y: 0, opacity: 1 }}
-            exit={{ scale: 0.92, y: 20, opacity: 0 }}
-            transition={{ type: "spring", damping: 22, stiffness: 260 }}
-            className="w-full max-w-xl mx-10"
+            exit={{ scale: 0.96, y: 18, opacity: 0 }}
+            transition={{ type: "spring", damping: 26, stiffness: 240 }}
+            className="relative w-full max-w-4xl"
             onClick={(e) => e.stopPropagation()}
           >
-            {activeWidget === "weather" && weather && (
-              <WeatherOverlay weather={weather} />
-            )}
-            {activeWidget === "git" && (
-              <GitOverlay commits={(widgetData.commits as string[]) ?? []} />
-            )}
+            {activeWidget === "weather" && weather && <WeatherOverlay weather={weather} />}
+            {activeWidget === "git" && <GitOverlay commits={(widgetData.commits as string[]) ?? []} />}
             {activeWidget === "tweet" && (
-              <TweetOverlay text={(widgetData.text as string) ?? ""} onClose={() => setActiveWidget(null)} />
+              <TweetOverlay
+                text={(widgetData.text as string) ?? ""}
+                onClose={() => setActiveWidget(null)}
+              />
             )}
-            {activeWidget === "news" && (
-              <NewsOverlayHint onClose={() => setActiveWidget(null)} />
-            )}
+            {activeWidget === "news" && <NewsOverlayHint onClose={() => setActiveWidget(null)} />}
           </motion.div>
 
-          <div
-            className="absolute bottom-8 text-xs text-orion-dim tracking-widest"
-            style={{ opacity: 0.5 }}
-          >
-            CLICK ANYWHERE TO DISMISS
+          <div className="absolute bottom-8 text-[11px] uppercase tracking-[0.34em] text-slate-500">
+            Click anywhere to dismiss
           </div>
         </motion.div>
       )}
@@ -55,184 +55,156 @@ export default function WidgetOverlay() {
   );
 }
 
-// ---- Weather ----------------------------------------------------------------
-
-const CONDITION_ICONS: Record<string, string> = {
-  "Clear sky": "◎", "Mainly clear": "◎", "Partly cloudy": "◑",
-  "Overcast": "●", "Fog": "≋", "Light drizzle": "⋮", "Drizzle": "⋮",
-  "Heavy drizzle": "⋮", "Light rain": "⌇", "Rain": "⌇", "Heavy rain": "⌇",
-  "Light snow": "✦", "Snow": "✦", "Thunderstorm": "⚡",
-};
-
-function WeatherOverlay({ weather }: { weather: WeatherData }) {
-  const icon = CONDITION_ICONS[weather.condition] ?? "◌";
+function OverlayFrame({
+  title,
+  accent,
+  eyebrow,
+  children,
+}: {
+  title: string;
+  accent: string;
+  eyebrow: string;
+  children: ReactNode;
+}) {
   return (
     <div
-      className="rounded-sm flex flex-col gap-6 p-8"
+      className="rounded-[36px] border px-6 py-6 shadow-[0_40px_120px_rgba(4,8,18,0.7)] sm:px-8 sm:py-8"
       style={{
-        background: "rgba(0, 16, 40, 0.9)",
-        border: "1px solid #00D4FF44",
-        boxShadow: "0 0 60px #00D4FF18, inset 0 0 40px #00D4FF06",
+        background: "linear-gradient(180deg, rgba(14,24,50,0.92), rgba(7,14,30,0.86))",
+        borderColor: `${accent}44`,
       }}
     >
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-orion-cyan tracking-[0.4em]">ATMOSPHERIC CONDITIONS</span>
-        <span className="text-xs text-orion-dim">{weather.city}</span>
-      </div>
-
-      <div className="flex items-center gap-6">
-        <span style={{ fontSize: "5rem", color: "#00D4FF", textShadow: "0 0 30px #00D4FF" }}>
-          {icon}
-        </span>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-4">
         <div>
-          <div className="font-mono text-white" style={{ fontSize: "4rem", textShadow: "0 0 20px #ffffff44" }}>
-            {weather.temperature}°C
+          <div className="text-[11px] uppercase tracking-[0.42em]" style={{ color: accent }}>
+            {eyebrow}
           </div>
-          <div className="text-orion-dim text-sm tracking-widest">{weather.condition}</div>
+          <div className="mt-2 text-3xl uppercase tracking-[0.16em] text-white sm:text-4xl">{title}</div>
         </div>
+        <div
+          className="h-12 w-12 rounded-full border"
+          style={{
+            borderColor: `${accent}55`,
+            boxShadow: `0 0 28px ${accent}20, inset 0 0 18px ${accent}18`,
+          }}
+        />
       </div>
-
-      <div className="grid grid-cols-4 gap-4 pt-4 border-t border-orion-border">
-        {[
-          ["FEELS LIKE", `${weather.feels_like}°C`],
-          ["HUMIDITY", `${weather.humidity}%`],
-          ["WIND", `${weather.wind_kmh} km/h`],
-          ["HIGH / LOW", `${weather.temp_max}° / ${weather.temp_min}°`],
-        ].map(([label, val]) => (
-          <div key={label} className="flex flex-col items-center gap-1">
-            <span className="text-xs text-orion-dim tracking-widest">{label}</span>
-            <span className="text-sm font-mono text-orion-text">{val}</span>
-          </div>
-        ))}
-      </div>
-
-      {weather.summary && (
-        <p className="text-sm text-orion-dim leading-relaxed border-t border-orion-border pt-4">
-          {weather.summary}
-        </p>
-      )}
+      {children}
     </div>
   );
 }
 
-// ---- Git --------------------------------------------------------------------
+function WeatherOverlay({ weather }: { weather: WeatherData }) {
+  return (
+    <OverlayFrame title={weather.city} accent="#79E7FF" eyebrow="Atmospheric scene">
+      <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="rounded-[28px] border border-cyan-300/15 bg-cyan-300/[0.05] p-6">
+          <div className="font-mono text-7xl text-white sm:text-8xl">{weather.temperature}C</div>
+          <div className="mt-3 text-lg uppercase tracking-[0.2em] text-slate-300">{weather.condition}</div>
+          <p className="mt-5 max-w-xl text-sm leading-7 text-slate-400">{weather.summary}</p>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+          {[
+            ["Feels like", `${weather.feels_like}C`],
+            ["Humidity", `${weather.humidity}%`],
+            ["Wind", `${weather.wind_kmh} km/h`],
+            ["High / Low", `${weather.temp_max}C / ${weather.temp_min}C`],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
+              <div className="text-[10px] uppercase tracking-[0.3em] text-slate-500">{label}</div>
+              <div className="mt-2 text-xl text-slate-100">{value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </OverlayFrame>
+  );
+}
 
 function GitOverlay({ commits }: { commits: string[] }) {
   return (
-    <div
-      className="rounded-sm flex flex-col gap-4 p-8"
-      style={{
-        background: "rgba(0, 16, 8, 0.92)",
-        border: "1px solid #00FF8844",
-        boxShadow: "0 0 60px #00FF8812, inset 0 0 40px #00FF8806",
-      }}
-    >
-      <div className="flex items-center justify-between border-b border-orion-border pb-3">
-        <span className="text-xs tracking-[0.4em]" style={{ color: "#00FF88" }}>COMMIT HISTORY</span>
-        <span className="text-xs text-orion-dim">ORION</span>
-      </div>
-
-      <div className="flex flex-col gap-3">
+    <OverlayFrame title="Commit History" accent="#52FFC8" eyebrow="Repository scene">
+      <div className="space-y-3">
         {commits.length === 0 ? (
-          <span className="text-sm text-orion-dim">No recent commits found.</span>
+          <span className="text-sm text-slate-400">No recent commits found.</span>
         ) : (
-          commits.map((line, i) => {
+          commits.map((line, index) => {
             const [hash, ...rest] = line.split(" ");
-            const msg = rest.join(" ");
-            const timeMatch = msg.match(/\((.+)\)$/);
-            const clean = msg.replace(/\(.*\)$/, "").trim();
+            const message = rest.join(" ");
+            const timeMatch = message.match(/\((.+)\)$/);
+            const clean = message.replace(/\(.*\)$/, "").trim();
+
             return (
               <motion.div
-                key={i}
-                initial={{ opacity: 0, x: -16 }}
+                key={`${hash}-${index}`}
+                initial={{ opacity: 0, x: -14 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.04 }}
-                className="flex items-start gap-3"
+                transition={{ delay: index * 0.03 }}
+                className="flex flex-wrap items-start gap-3 rounded-[24px] border border-white/10 bg-white/[0.04] px-4 py-4"
               >
-                <span className="font-mono text-sm shrink-0" style={{ color: "#00FF88" }}>{hash}</span>
-                <span className="text-sm text-orion-text font-mono flex-1 leading-snug">{clean}</span>
-                {timeMatch && (
-                  <span className="text-xs text-orion-dim shrink-0 mt-0.5">{timeMatch[1]}</span>
-                )}
+                <span className="font-mono text-sm uppercase tracking-[0.18em] text-emerald-200">{hash}</span>
+                <span className="flex-1 text-sm leading-7 text-slate-200">{clean}</span>
+                {timeMatch && <span className="text-xs uppercase tracking-[0.2em] text-slate-500">{timeMatch[1]}</span>}
               </motion.div>
             );
           })
         )}
       </div>
-    </div>
+    </OverlayFrame>
   );
 }
 
-// ---- Tweet ------------------------------------------------------------------
-
 function TweetOverlay({ text, onClose }: { text: string; onClose: () => void }) {
   const remaining = 280 - text.length;
+
   const copy = () => {
     navigator.clipboard.writeText(text).then(onClose);
   };
 
   return (
-    <div
-      className="rounded-sm flex flex-col gap-5 p-8"
-      style={{
-        background: "rgba(0, 10, 24, 0.92)",
-        border: "1px solid rgba(29,161,242,0.4)",
-        boxShadow: "0 0 60px rgba(29,161,242,0.12), inset 0 0 40px rgba(29,161,242,0.04)",
-      }}
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span style={{ color: "#1DA1F2", fontSize: "20px" }}>𝕏</span>
-          <span className="text-sm tracking-[0.3em]" style={{ color: "#1DA1F2" }}>TWEET DRAFT</span>
+    <OverlayFrame title="Tweet Draft" accent="#62A0FF" eyebrow="Social scene">
+      <div className="rounded-[28px] border border-sky-300/15 bg-sky-300/[0.05] p-6">
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-[11px] uppercase tracking-[0.34em] text-sky-100/85">Ready to copy</span>
+          <span
+            className="font-mono text-sm"
+            style={{ color: remaining < 20 ? "#FF6B7B" : remaining < 60 ? "#FFB55F" : "#8AA4BC" }}
+          >
+            {remaining}
+          </span>
         </div>
-        <span
-          className="text-sm font-mono"
-          style={{ color: remaining < 20 ? "#FF4444" : remaining < 60 ? "#FF9900" : "#555" }}
-        >
-          {remaining}
-        </span>
-      </div>
 
-      <p className="text-lg leading-relaxed" style={{ color: "#C8E8F8" }}>{text}</p>
+        <p className="mt-5 text-xl leading-9 text-slate-100">{text}</p>
 
-      <div className="flex gap-3 pt-2 border-t border-orion-border">
-        <motion.button
-          onClick={copy}
-          whileTap={{ scale: 0.96 }}
-          className="px-5 py-2 rounded-sm text-sm tracking-widest"
-          style={{
-            border: "1px solid rgba(29,161,242,0.5)",
-            color: "#1DA1F2",
-            background: "rgba(29,161,242,0.08)",
-          }}
-        >
-          COPY & DISMISS
-        </motion.button>
-        <span className="text-xs text-orion-dim self-center">Paste into X to post</span>
+        <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-white/10 pt-4">
+          <button
+            onClick={copy}
+            className="rounded-full border border-sky-300/25 bg-sky-300/10 px-4 py-2 text-[11px] uppercase tracking-[0.3em] text-sky-100 transition hover:bg-sky-300/15"
+          >
+            Copy and dismiss
+          </button>
+          <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Paste into X to publish</span>
+        </div>
       </div>
-    </div>
+    </OverlayFrame>
   );
 }
 
-// ---- News hint --------------------------------------------------------------
-
 function NewsOverlayHint({ onClose }: { onClose: () => void }) {
   return (
-    <div
-      className="rounded-sm flex flex-col gap-4 p-8 text-center"
-      style={{
-        background: "rgba(0, 12, 28, 0.9)",
-        border: "1px solid #00D4FF33",
-      }}
-    >
-      <span className="text-xs text-orion-cyan tracking-[0.4em]">INTEL FEED</span>
-      <p className="text-sm text-orion-dim">See the news panel on the right for latest headlines.</p>
-      <button
-        onClick={onClose}
-        className="text-xs text-orion-dim tracking-widest hover:text-orion-cyan transition-colors"
-      >
-        DISMISS
-      </button>
-    </div>
+    <OverlayFrame title="Intel Feed" accent="#79E7FF" eyebrow="News scene">
+      <div className="flex flex-col items-center gap-5 rounded-[28px] border border-white/10 bg-white/[0.04] px-6 py-8 text-center">
+        <p className="max-w-xl text-base leading-8 text-slate-300">
+          The live headlines remain pinned on the right rail. This fullscreen scene acts as an abstract focus state instead of duplicating the feed content.
+        </p>
+        <button
+          onClick={onClose}
+          className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-[11px] uppercase tracking-[0.3em] text-cyan-100 transition hover:bg-cyan-300/15"
+        >
+          Dismiss
+        </button>
+      </div>
+    </OverlayFrame>
   );
 }

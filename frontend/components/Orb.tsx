@@ -1,20 +1,21 @@
 "use client";
-import { motion, AnimatePresence } from "framer-motion";
-import { useOrionStore, AssistantState } from "@/lib/store";
+
+import { AnimatePresence, motion } from "framer-motion";
 import { orionSocket } from "@/lib/socket";
+import { AssistantState, useOrionStore } from "@/lib/store";
 
 const STATE_LABELS: Record<AssistantState, string> = {
-  idle: "STANDBY",
-  listening: "LISTENING",
-  thinking: "PROCESSING",
-  speaking: "SPEAKING",
+  idle: "Standby",
+  listening: "Listening",
+  thinking: "Processing",
+  speaking: "Speaking",
 };
 
 const STATE_COLORS: Record<AssistantState, string> = {
-  idle: "#00D4FF",
-  listening: "#00FF88",
-  thinking: "#FF9900",
-  speaking: "#0088FF",
+  idle: "#79E7FF",
+  listening: "#52FFC8",
+  thinking: "#FFB55F",
+  speaking: "#62A0FF",
 };
 
 export default function Orb() {
@@ -26,139 +27,171 @@ export default function Orb() {
     if (state === "idle") orionSocket.trigger();
   };
 
-  return (
-    <div className="flex flex-col items-center gap-6 select-none">
-      {/* Outer rings */}
-      <div className="relative flex items-center justify-center" style={{ width: 240, height: 240 }}>
+  const active = state !== "idle";
 
-        {/* Outermost rotating ring - only when thinking */}
+  return (
+    <div className="flex flex-col items-center gap-7 select-none">
+      <div className="relative flex items-center justify-center" style={{ width: 320, height: 320 }}>
+        {/* Static glow at idle, animated only when active. The blur+keyframe
+            combo is the most expensive cost in this scene. */}
+        {active ? (
+          <motion.div
+            className="absolute rounded-full"
+            style={{
+              width: 290,
+              height: 290,
+              background: `radial-gradient(circle, ${color}12, transparent 66%)`,
+              filter: "blur(10px)",
+            }}
+            animate={{ scale: [0.96, 1.03, 0.96], opacity: [0.55, 0.95, 0.55] }}
+            transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+          />
+        ) : (
+          <div
+            className="absolute rounded-full"
+            style={{
+              width: 290,
+              height: 290,
+              background: `radial-gradient(circle, ${color}12, transparent 66%)`,
+              opacity: 0.75,
+            }}
+          />
+        )}
+
+        <motion.div
+          className="absolute rounded-full border"
+          style={{ width: 280, height: 280, borderColor: `${color}24` }}
+          animate={{ rotate: 360 }}
+          transition={{ duration: 42, repeat: Infinity, ease: "linear" }}
+        />
+
         <AnimatePresence>
           {state === "thinking" && (
             <motion.div
-              key="outer-ring"
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1, rotate: 360 }}
-              exit={{ opacity: 0 }}
-              transition={{ rotate: { duration: 3, repeat: Infinity, ease: "linear" }, opacity: { duration: 0.3 } }}
+              key="thinking-ring"
               className="absolute rounded-full border"
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1.04, rotate: 360 }}
+              exit={{ opacity: 0, scale: 0.92 }}
+              transition={{
+                opacity: { duration: 0.24 },
+                scale: { duration: 0.5 },
+                rotate: { duration: 4.4, ease: "linear", repeat: Infinity },
+              }}
               style={{
-                width: 230, height: 230,
-                borderColor: `${color}44`,
+                width: 300,
+                height: 300,
+                borderColor: `${color}52`,
                 borderTopColor: color,
-                borderWidth: 1,
               }}
             />
           )}
         </AnimatePresence>
 
-        {/* Listening rings expanding outward */}
         <AnimatePresence>
-          {state === "listening" && (
-            <>
-              {[0, 1, 2].map((i) => (
-                <motion.div
-                  key={`ring-${i}`}
-                  className="absolute rounded-full border"
-                  style={{ borderColor: color, borderWidth: 1 }}
-                  initial={{ width: 160, height: 160, opacity: 0.7 }}
-                  animate={{ width: 230, height: 230, opacity: 0 }}
-                  transition={{ duration: 1.8, delay: i * 0.6, repeat: Infinity, ease: "easeOut" }}
-                />
-              ))}
-            </>
-          )}
+          {state === "listening" &&
+            [0, 1, 2].map((index) => (
+              <motion.div
+                key={`listen-${index}`}
+                className="absolute rounded-full border"
+                style={{ borderColor: `${color}70` }}
+                initial={{ width: 160, height: 160, opacity: 0.7 }}
+                animate={{ width: 310, height: 310, opacity: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 2.1, delay: index * 0.45, repeat: Infinity, ease: "easeOut" }}
+              />
+            ))}
         </AnimatePresence>
 
-        {/* Speaking rings */}
         <AnimatePresence>
-          {state === "speaking" && (
-            <>
-              {[0, 1].map((i) => (
-                <motion.div
-                  key={`speak-${i}`}
-                  className="absolute rounded-full border"
-                  style={{ borderColor: color, borderWidth: 1 }}
-                  initial={{ width: 140, height: 140, opacity: 0.6 }}
-                  animate={{ width: [140, 200, 140], height: [140, 200, 140], opacity: [0.6, 0.1, 0.6] }}
-                  transition={{ duration: 1.2, delay: i * 0.4, repeat: Infinity, ease: "easeInOut" }}
-                />
-              ))}
-            </>
-          )}
+          {state === "speaking" &&
+            [0, 1].map((index) => (
+              <motion.div
+                key={`speak-${index}`}
+                className="absolute rounded-full border"
+                style={{ borderColor: `${color}58` }}
+                initial={{ width: 156, height: 156, opacity: 0.55 }}
+                animate={{
+                  width: [156, 250, 156],
+                  height: [156, 250, 156],
+                  opacity: [0.55, 0.12, 0.55],
+                }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 1.55, delay: index * 0.3, repeat: Infinity, ease: "easeInOut" }}
+              />
+            ))}
         </AnimatePresence>
 
-        {/* Middle ring */}
-        <motion.div
-          className="absolute rounded-full border"
-          style={{ width: 170, height: 170, borderColor: `${color}33`, borderWidth: 1 }}
-          animate={{ rotate: state === "thinking" ? -360 : 0 }}
-          transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
-        />
-
-        {/* Core orb - clickable */}
         <motion.button
           onClick={handleClick}
-          className="relative z-10 rounded-full flex items-center justify-center cursor-pointer focus:outline-none"
+          className="relative z-10 flex items-center justify-center rounded-full focus:outline-none"
           style={{
-            width: 130,
-            height: 130,
-            background: `radial-gradient(circle at 35% 35%, ${color}22, ${color}08 60%, transparent 100%)`,
-            border: `1px solid ${color}66`,
-            boxShadow: `0 0 30px ${color}33, 0 0 60px ${color}18, inset 0 0 20px ${color}11`,
+            width: 176,
+            height: 176,
+            border: `1px solid ${color}55`,
+            background: `
+              radial-gradient(circle at 35% 30%, rgba(255,255,255,0.2), transparent 22%),
+              radial-gradient(circle at center, ${color}22, rgba(9,18,40,0.9) 70%)
+            `,
+            boxShadow: `0 0 40px ${color}20, inset 0 0 50px ${color}12`,
           }}
-          whileHover={state === "idle" ? { scale: 1.05 } : {}}
-          whileTap={state === "idle" ? { scale: 0.97 } : {}}
-          animate={
-            state === "idle"
-              ? { boxShadow: [`0 0 20px ${color}22, inset 0 0 15px ${color}08`, `0 0 40px ${color}44, inset 0 0 25px ${color}15`, `0 0 20px ${color}22, inset 0 0 15px ${color}08`] }
-              : {}
-          }
-          transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+          whileHover={state === "idle" ? { scale: 1.03 } : {}}
+          whileTap={state === "idle" ? { scale: 0.985 } : {}}
         >
-          {/* Inner arc reactor pattern */}
-          <svg width="70" height="70" viewBox="0 0 70 70" fill="none">
-            <circle cx="35" cy="35" r="32" stroke={`${color}44`} strokeWidth="0.5" />
-            <circle cx="35" cy="35" r="22" stroke={`${color}66`} strokeWidth="0.5" />
-            <circle cx="35" cy="35" r="10" fill={`${color}22`} stroke={color} strokeWidth="1" />
-            <circle cx="35" cy="35" r="5" fill={color} opacity="0.9" />
-            {[0, 60, 120, 180, 240, 300].map((deg) => {
+          <motion.div
+            className="absolute rounded-full border"
+            style={{ width: 130, height: 130, borderColor: `${color}44` }}
+            animate={{ rotate: 360 }}
+            transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
+          />
+          <svg width="98" height="98" viewBox="0 0 98 98" fill="none" aria-hidden="true">
+            <circle cx="49" cy="49" r="38" stroke={`${color}55`} strokeWidth="1" />
+            <circle cx="49" cy="49" r="23" stroke={color} strokeWidth="1.25" strokeDasharray="4 5" />
+            <circle cx="49" cy="49" r="10" fill={`${color}44`} stroke={color} strokeWidth="1.2" />
+            <circle cx="49" cy="49" r="4" fill={color} />
+            {[0, 72, 144, 216, 288].map((deg) => {
               const rad = (deg * Math.PI) / 180;
-              const x1 = 35 + 11 * Math.cos(rad);
-              const y1 = 35 + 11 * Math.sin(rad);
-              const x2 = 35 + 21 * Math.cos(rad);
-              const y2 = 35 + 21 * Math.sin(rad);
-              return <line key={deg} x1={x1} y1={y1} x2={x2} y2={y2} stroke={`${color}88`} strokeWidth="0.75" />;
+              const x1 = 49 + 14 * Math.cos(rad);
+              const y1 = 49 + 14 * Math.sin(rad);
+              const x2 = 49 + 31 * Math.cos(rad);
+              const y2 = 49 + 31 * Math.sin(rad);
+              return <line key={deg} x1={x1} y1={y1} x2={x2} y2={y2} stroke={`${color}88`} strokeWidth="1" />;
             })}
           </svg>
         </motion.button>
+
+        <div className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-b from-white/[0.03] via-transparent to-transparent" />
       </div>
 
-      {/* Status label */}
-      <div className="flex flex-col items-center gap-1">
+      <div className="flex flex-col items-center gap-2">
         <motion.div
           key={state}
-          initial={{ opacity: 0, y: -4 }}
+          initial={{ opacity: 0, y: -5 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-xs tracking-widest font-mono"
+          className="text-xs uppercase tracking-[0.42em]"
           style={{ color }}
         >
           {STATE_LABELS[state]}
         </motion.div>
 
-        {/* Connection dot */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
           <div
-            className="w-1.5 h-1.5 rounded-full"
-            style={{ backgroundColor: connected ? "#00FF88" : "#FF4444", boxShadow: connected ? "0 0 6px #00FF88" : "0 0 6px #FF4444" }}
+            className="h-2 w-2 rounded-full"
+            style={{
+              backgroundColor: connected ? "#52FFC8" : "#FF6B7B",
+              boxShadow: connected ? "0 0 10px #52FFC8" : "0 0 10px #FF6B7B",
+            }}
           />
-          <span className="text-xs text-orion-dim tracking-widest">
-            {connected ? "CONNECTED" : "OFFLINE"}
+          <span className="text-[10px] uppercase tracking-[0.34em] text-slate-400">
+            {connected ? "Connected" : "Offline"}
           </span>
         </div>
       </div>
 
       {state === "idle" && (
-        <p className="text-xs text-orion-dim tracking-wider">DOUBLE CLAP OR CLICK TO ACTIVATE</p>
+        <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">
+          Double clap or click to activate
+        </p>
       )}
     </div>
   );
