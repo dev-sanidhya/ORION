@@ -5,6 +5,7 @@ import time
 import threading
 import wave
 import io
+import os
 from typing import Callable, Awaitable
 
 RATE = 16000
@@ -44,10 +45,7 @@ class AudioListener:
         self.clap_threshold = CLAP_THRESHOLD
         self.current_amplitude: int = 0
         self.muted: bool = False  # suppresses clap+wake detection while TTS plays
-
-        # Shared audio queue for the single capture thread
-        self._audio_chunks: list[bytes] = []
-        self._audio_lock = threading.Lock()
+        self._wake_enabled: bool = os.getenv("ORION_WAKE_PHRASE", "0") == "1"
 
     def start(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
@@ -59,7 +57,10 @@ class AudioListener:
         # Keyboard long-press Space
         threading.Thread(target=self._keyboard_thread, daemon=True, name="keyboard").start()
 
-        print("[ORION] Listeners active: double-clap | say 'wake up' | hold Space")
+        modes = ["double-clap", "hold Space"]
+        if self._wake_enabled:
+            modes.insert(1, "say 'wake up'")
+        print(f"[ORION] Listeners active: {' | '.join(modes)}")
 
     def stop(self):
         self._running = False
@@ -74,7 +75,10 @@ class AudioListener:
     # ---- Single audio capture thread - fans out to clap + wake detection ----
 
     def _audio_capture_thread(self):
-        from stt import check_wake_phrase_sync
+        check_wake_phrase_sync = None
+        if self._wake_enabled:
+            from stt import check_wake_phrase_sync as _wake_check
+            check_wake_phrase_sync = _wake_check
 
         pa = pyaudio.PyAudio()
         stream = pa.open(
@@ -84,21 +88,20 @@ class AudioListener:
 
         last_clap = 0.0
         wake_buf: list[bytes] = []
+        # Decimate amplitude updates - the UI animates at <=10fps, no need to
+        # update on every 64ms audio chunk. Saves on store re-renders too.
+        amp_decim = 0
 
-        print("[Audio] Capture thread started")
+        print(f"[Audio] Capture thread started (wake_phrase={self._wake_enabled})")
 
         while self._running:
             try:
                 data = stream.read(CHUNK, exception_on_overflow=False)
 
-                # Store latest chunks for speech recording
-                with self._audio_lock:
-                    self._audio_chunks.append(data)
-                    if len(self._audio_chunks) > int(RATE / CHUNK * 30):
-                        self._audio_chunks.pop(0)
-
                 amp = int(np.abs(np.frombuffer(data, dtype=np.int16)).max())
-                self.current_amplitude = amp
+                amp_decim = (amp_decim + 1) % 3
+                if amp_decim == 0:
+                    self.current_amplitude = amp
 
                 if self.muted:
                     continue
@@ -115,17 +118,20 @@ class AudioListener:
                     else:
                         last_clap = now
 
-                # --- Wake phrase detection (every 2s, 50% overlap) ---
-                wake_buf.append(data)
-                if len(wake_buf) >= WAKE_CLIP_CHUNKS:
-                    clip = _pack_wav(wake_buf)
-                    wake_buf = wake_buf[WAKE_CLIP_CHUNKS // 2:]   # 50% overlap
-                    # Only check if wake model is ready
-                    if check_wake_phrase_sync(clip):
-                        print("[Wake] 'wake up' detected!")
-                        self._fire()
-                        wake_buf = []
-                        time.sleep(WAKE_COOLDOWN)
+                # --- Wake phrase detection (opt-in via ORION_WAKE_PHRASE=1) ---
+                # When disabled we skip the whisper inference loop entirely;
+                # the rolling buffer is the expensive part because each
+                # transcribe() call runs faster-whisper end-to-end.
+                if check_wake_phrase_sync is not None:
+                    wake_buf.append(data)
+                    if len(wake_buf) >= WAKE_CLIP_CHUNKS:
+                        clip = _pack_wav(wake_buf)
+                        wake_buf = wake_buf[WAKE_CLIP_CHUNKS // 2:]
+                        if check_wake_phrase_sync(clip):
+                            print("[Wake] 'wake up' detected!")
+                            self._fire()
+                            wake_buf = []
+                            time.sleep(WAKE_COOLDOWN)
 
             except Exception as e:
                 print(f"[Audio] Error: {e}")
