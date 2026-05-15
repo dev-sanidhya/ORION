@@ -46,6 +46,7 @@ PORTFOLIO_DIR = os.getenv("PORTFOLIO_DIR", r"C:\Users\shish\Desktop\PORTFOLIO")
 ORION_DIR = os.path.join(PORTFOLIO_DIR, "ORION")
 
 _widget_blur_task: asyncio.Task | None = None
+_current_state: str = "idle"
 
 
 def _pop_sentences(buffer: str) -> tuple[list[str], str]:
@@ -139,6 +140,8 @@ async def broadcast(payload: dict):
 
 
 async def set_state(state: str):
+    global _current_state
+    _current_state = state
     print(f"[ORION] State -> {state}")
     await broadcast({"type": "state", "state": state})
 
@@ -322,12 +325,20 @@ async def maybe_evening_wrap():
 # ---- Amplitude broadcasting ----------------------------------------------
 
 async def amplitude_broadcaster():
-    """Reads mic amplitude from listener and broadcasts at ~10fps."""
+    """Reads mic amplitude from listener and broadcasts only while the UI
+    actually uses it (listening / speaking). At idle the waveform is flat,
+    so streaming amplitude just wastes CPU on both ends."""
+    last_sent = 0
     while True:
-        await asyncio.sleep(0.1)
-        amp = listener.current_amplitude
-        if connected_clients:
-            await broadcast({"type": "amplitude", "value": int(amp)})
+        if _current_state in ("listening", "speaking") and connected_clients:
+            amp = int(listener.current_amplitude)
+            # Skip near-duplicate values to cut React re-renders.
+            if abs(amp - last_sent) > 150:
+                last_sent = amp
+                await broadcast({"type": "amplitude", "value": amp})
+            await asyncio.sleep(0.16)  # ~6fps active
+        else:
+            await asyncio.sleep(0.5)
 
 
 # ---- Periodic tasks -------------------------------------------------------
