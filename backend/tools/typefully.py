@@ -14,7 +14,8 @@ def _headers() -> Optional[dict]:
     key = os.getenv("TYPEFULLY_API_KEY", "").strip()
     if not key:
         return None
-    return {"X-API-KEY": key, "Content-Type": "application/json"}
+    # Typefully docs: header is `X-API-KEY: Bearer <api-key>`
+    return {"X-API-KEY": f"Bearer {key}", "Content-Type": "application/json"}
 
 
 async def is_configured() -> bool:
