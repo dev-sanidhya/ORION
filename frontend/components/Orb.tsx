@@ -32,37 +32,24 @@ export default function Orb() {
   return (
     <div className="flex flex-col items-center gap-7 select-none">
       <div className="relative flex items-center justify-center" style={{ width: 320, height: 320 }}>
-        {/* Static glow at idle, animated only when active. The blur+keyframe
-            combo is the most expensive cost in this scene. */}
-        {active ? (
-          <motion.div
-            className="absolute rounded-full"
-            style={{
-              width: 290,
-              height: 290,
-              background: `radial-gradient(circle, ${color}12, transparent 66%)`,
-              filter: "blur(10px)",
-            }}
-            animate={{ scale: [0.96, 1.03, 0.96], opacity: [0.55, 0.95, 0.55] }}
-            transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-          />
-        ) : (
-          <div
-            className="absolute rounded-full"
-            style={{
-              width: 290,
-              height: 290,
-              background: `radial-gradient(circle, ${color}12, transparent 66%)`,
-              opacity: 0.75,
-            }}
-          />
-        )}
+        {/* Soft halo - breathes via transform/opacity only (no animated blur). */}
+        <div
+          className="absolute rounded-full orion-breathe"
+          style={{
+            width: 290,
+            height: 290,
+            background: `radial-gradient(circle, ${color}14, transparent 66%)`,
+          }}
+        />
 
-        <motion.div
-          className="absolute rounded-full border"
-          style={{ width: 280, height: 280, borderColor: `${color}24` }}
-          animate={{ rotate: 360 }}
-          transition={{ duration: 42, repeat: Infinity, ease: "linear" }}
+        {/* Two counter-rotating rings - pure CSS, GPU composited. */}
+        <div
+          className="absolute rounded-full border orion-spin-slow"
+          style={{ width: 280, height: 280, borderColor: `${color}26` }}
+        />
+        <div
+          className="absolute rounded-full border orion-spin-rev"
+          style={{ width: 236, height: 236, borderColor: `${color}1c` }}
         />
 
         <AnimatePresence>
@@ -138,11 +125,13 @@ export default function Orb() {
           whileHover={state === "idle" ? { scale: 1.03 } : {}}
           whileTap={state === "idle" ? { scale: 0.985 } : {}}
         >
-          <motion.div
-            className="absolute rounded-full border"
+          <div
+            className="absolute rounded-full border orion-spin-slow"
             style={{ width: 130, height: 130, borderColor: `${color}44` }}
-            animate={{ rotate: 360 }}
-            transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
+          />
+          <div
+            className="absolute rounded-full border orion-spin-rev"
+            style={{ width: 92, height: 92, borderColor: `${color}55` }}
           />
           <svg width="98" height="98" viewBox="0 0 98 98" fill="none" aria-hidden="true">
             <circle cx="49" cy="49" r="38" stroke={`${color}55`} strokeWidth="1" />

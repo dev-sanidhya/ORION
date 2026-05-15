@@ -1,7 +1,15 @@
 "use client";
+
 import { useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useOrionStore } from "@/lib/store";
+import SurfacePanel from "@/components/SurfacePanel";
+
+const STATE_ACCENT: Record<string, string> = {
+  listening: "#52FFC8",
+  thinking: "#FFB55F",
+  speaking: "#62A0FF",
+};
 
 export default function TranscriptFeed() {
   const transcript = useOrionStore((s) => s.transcript);
@@ -13,67 +21,69 @@ export default function TranscriptFeed() {
   }, [transcript]);
 
   return (
-    <div className="glow-border rounded-sm bg-orion-surface border border-orion-border flex flex-col h-full overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-orion-border">
-        <span className="text-xs text-orion-cyan tracking-widest">TRANSCRIPT</span>
+    <SurfacePanel className="flex h-full min-h-0 flex-col overflow-hidden px-5 py-5 sm:px-6">
+      <div className="flex items-center justify-between border-b border-white/10 pb-4">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.38em] text-cyan-100/75">Transcript</div>
+          <div className="mt-1 text-xs uppercase tracking-[0.24em] text-slate-500">Conversation stream</div>
+        </div>
         {state !== "idle" && (
           <motion.span
-            animate={{ opacity: [1, 0.3, 1] }}
+            animate={{ opacity: [1, 0.4, 1] }}
             transition={{ duration: 1, repeat: Infinity }}
-            className="text-xs tracking-widest"
-            style={{ color: state === "listening" ? "#00FF88" : state === "thinking" ? "#FF9900" : "#0088FF" }}
+            className="text-[10px] uppercase tracking-[0.34em]"
+            style={{ color: STATE_ACCENT[state] }}
           >
-            {state.toUpperCase()}
+            {state}
           </motion.span>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3 min-h-0">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pt-5 pr-1">
         {transcript.length === 0 && (
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-orion-dim text-xs tracking-widest">AWAITING INPUT</p>
+          <div className="flex flex-1 items-center justify-center">
+            <p className="text-[11px] uppercase tracking-[0.34em] text-slate-500">Awaiting input</p>
           </div>
         )}
 
         <AnimatePresence initial={false}>
-          {transcript.map((entry) => (
-            <motion.div
-              key={entry.id}
-              initial={{ opacity: 0, x: entry.role === "user" ? 20 : -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.25 }}
-              className={`flex flex-col gap-0.5 ${entry.role === "user" ? "items-end" : "items-start"}`}
-            >
-              <span className="text-xs tracking-widest" style={{ color: entry.role === "user" ? "#3A5A70" : "#00D4FF" }}>
-                {entry.role === "user" ? "YOU" : "ORION"}
-              </span>
-              <div
-                className="text-sm rounded-sm px-3 py-2 max-w-xs"
-                style={{
-                  background: entry.role === "user" ? "rgba(0,212,255,0.05)" : "rgba(0,102,255,0.07)",
-                  border: `1px solid ${entry.role === "user" ? "rgba(0,212,255,0.15)" : "rgba(0,102,255,0.2)"}`,
-                  color: entry.role === "user" ? "#A0C4D8" : "#C8E8F8",
-                }}
+          {transcript.map((entry) => {
+            const isUser = entry.role === "user";
+            return (
+              <motion.div
+                key={entry.id}
+                initial={{ opacity: 0, x: isUser ? 20 : -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.24 }}
+                className={`flex flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}
               >
-                {entry.content}
-              </div>
-            </motion.div>
-          ))}
+                <span className="text-[10px] uppercase tracking-[0.34em] text-slate-500">
+                  {isUser ? "You" : "Orion"}
+                </span>
+                <div
+                  className="max-w-[85%] rounded-[24px] px-4 py-3 text-sm leading-7"
+                  style={{
+                    background: isUser ? "rgba(121, 231, 255, 0.09)" : "rgba(98, 160, 255, 0.08)",
+                    border: `1px solid ${isUser ? "rgba(121, 231, 255, 0.14)" : "rgba(98, 160, 255, 0.14)"}`,
+                    color: isUser ? "#d6edf7" : "#eef6ff",
+                  }}
+                >
+                  {entry.content}
+                </div>
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
 
         {state === "thinking" && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex items-start gap-2"
-          >
-            <div className="flex gap-1 px-3 py-2 rounded-sm" style={{ border: "1px solid rgba(0,102,255,0.2)", background: "rgba(0,102,255,0.07)" }}>
-              {[0, 1, 2].map((i) => (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-start">
+            <div className="flex gap-1 rounded-full border border-white/10 bg-white/[0.04] px-4 py-3">
+              {[0, 1, 2].map((index) => (
                 <motion.div
-                  key={i}
-                  className="w-1.5 h-1.5 rounded-full bg-orion-cyan"
-                  animate={{ opacity: [0.3, 1, 0.3] }}
-                  transition={{ duration: 0.9, delay: i * 0.2, repeat: Infinity }}
+                  key={index}
+                  className="h-1.5 w-1.5 rounded-full bg-cyan-200"
+                  animate={{ opacity: [0.35, 1, 0.35] }}
+                  transition={{ duration: 0.9, delay: index * 0.15, repeat: Infinity }}
                 />
               ))}
             </div>
@@ -82,6 +92,6 @@ export default function TranscriptFeed() {
 
         <div ref={bottomRef} />
       </div>
-    </div>
+    </SurfacePanel>
   );
 }

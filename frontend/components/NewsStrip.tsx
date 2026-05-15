@@ -1,6 +1,8 @@
 "use client";
+
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
+import SurfacePanel from "@/components/SurfacePanel";
 
 interface NewsItem {
   title: string;
@@ -15,11 +17,13 @@ const FEEDS = [
 
 async function fetchRSS(url: string): Promise<NewsItem[]> {
   try {
-    const r = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&count=5`);
-    const data = await r.json();
+    const response = await fetch(
+      `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&count=5`,
+    );
+    const data = await response.json();
     return (data.items || []).map((item: { title: string; description: string }) => ({
       title: item.title,
-      summary: item.description?.replace(/<[^>]+>/g, "").slice(0, 120) || "",
+      summary: item.description?.replace(/<[^>]+>/g, "").slice(0, 140) || "",
     }));
   } catch {
     return [];
@@ -45,95 +49,99 @@ export default function NewsStrip({ highlight = false }: { highlight?: boolean }
     setLoading(false);
   }
 
-  // Auto-rotate headlines every 5 seconds
   useEffect(() => {
     if (headlines.length === 0) return;
-    const t = setInterval(() => {
-      setActiveIdx((i) => (i + 1) % headlines.length);
+    const timer = setInterval(() => {
+      setActiveIdx((current) => (current + 1) % headlines.length);
     }, 5000);
-    return () => clearInterval(t);
+    return () => clearInterval(timer);
   }, [headlines]);
 
   return (
-    <div
-      className="glow-border rounded-sm bg-orion-surface flex flex-col h-full overflow-hidden transition-all duration-300"
-      style={{
-        border: highlight ? "1px solid #00D4FF66" : "1px solid var(--orion-border, #1a3040)",
-        boxShadow: highlight ? "0 0 20px #00D4FF18" : undefined,
-      }}
+    <SurfacePanel
+      className="flex h-full flex-col overflow-hidden px-5 py-5 sm:px-6"
+      strong={highlight}
     >
-      {/* Header with tabs */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-orion-border">
-        <span className="text-xs text-orion-cyan tracking-widest">INTEL FEED</span>
-        <div className="flex gap-2">
-          {FEEDS.map((f, i) => (
-            <button
-              key={f.label}
-              onClick={() => loadFeed(i)}
-              className="text-xs tracking-widest px-1.5 py-0.5 rounded-sm transition-colors"
-              style={{
-                color: activeTab === i ? "#00D4FF" : "#3A5A70",
-                background: activeTab === i ? "rgba(0,212,255,0.1)" : "transparent",
-                border: `1px solid ${activeTab === i ? "rgba(0,212,255,0.3)" : "transparent"}`,
-              }}
-            >
-              {f.label}
-            </button>
-          ))}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.38em] text-cyan-100/75">Intel Feed</div>
+          <div className="mt-1 text-xs uppercase tracking-[0.24em] text-slate-500">Rolling world brief</div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {FEEDS.map((feed, index) => {
+            const active = activeTab === index;
+            return (
+              <button
+                key={feed.label}
+                onClick={() => loadFeed(index)}
+                className="rounded-full px-3 py-1 text-[10px] uppercase tracking-[0.32em] transition"
+                style={{
+                  color: active ? "#d8f6ff" : "#7a96ad",
+                  border: active ? "1px solid rgba(121, 231, 255, 0.22)" : "1px solid rgba(255,255,255,0.08)",
+                  background: active ? "rgba(121, 231, 255, 0.12)" : "rgba(255,255,255,0.03)",
+                }}
+              >
+                {feed.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 flex flex-col justify-between p-4 min-h-0">
+      <div className="flex flex-1 flex-col justify-between pt-5">
         {loading ? (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex flex-1 items-center justify-center">
             <motion.div
-              animate={{ opacity: [0.3, 1, 0.3] }}
-              transition={{ duration: 1, repeat: Infinity }}
-              className="text-xs text-orion-dim tracking-widest"
+              animate={{ opacity: [0.35, 1, 0.35] }}
+              transition={{ duration: 1.1, repeat: Infinity }}
+              className="text-[11px] uppercase tracking-[0.34em] text-slate-500"
             >
-              FETCHING INTEL...
+              Fetching intel
             </motion.div>
           </div>
         ) : (
           <>
             <AnimatePresence mode="wait">
               <motion.div
-                key={activeIdx}
-                initial={{ opacity: 0, y: 6 }}
+                key={`${activeTab}-${activeIdx}`}
+                initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.3 }}
-                className="flex flex-col gap-2"
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.28 }}
+                className="space-y-4"
               >
-                <p className="text-sm text-orion-text leading-relaxed line-clamp-3">
-                  {headlines[activeIdx]?.title}
+                <p className="text-lg leading-8 text-slate-100">
+                  {headlines[activeIdx]?.title ?? "No headlines available."}
                 </p>
                 {headlines[activeIdx]?.summary && (
-                  <p className="text-xs text-orion-dim leading-relaxed line-clamp-2">
-                    {headlines[activeIdx].summary}
-                  </p>
+                  <p className="text-sm leading-7 text-slate-400">{headlines[activeIdx].summary}</p>
                 )}
               </motion.div>
             </AnimatePresence>
 
-            {/* Dot indicators */}
-            <div className="flex gap-1.5 mt-3">
-              {headlines.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setActiveIdx(i)}
-                  className="w-1.5 h-1.5 rounded-full transition-all"
-                  style={{
-                    background: i === activeIdx ? "#00D4FF" : "#0D2040",
-                    boxShadow: i === activeIdx ? "0 0 6px #00D4FF" : "none",
-                  }}
-                />
-              ))}
+            <div className="mt-6 flex items-center justify-between gap-4">
+              <div className="flex gap-2">
+                {headlines.map((_, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setActiveIdx(index)}
+                    className="h-2 w-2 rounded-full transition-all"
+                    style={{
+                      background: index === activeIdx ? "#79e7ff" : "rgba(122, 150, 173, 0.45)",
+                      boxShadow: index === activeIdx ? "0 0 14px rgba(121, 231, 255, 0.55)" : "none",
+                      transform: index === activeIdx ? "scale(1.15)" : "scale(1)",
+                    }}
+                  />
+                ))}
+              </div>
+              <span className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
+                Auto rotates every 5s
+              </span>
             </div>
           </>
         )}
       </div>
-    </div>
+    </SurfacePanel>
   );
 }

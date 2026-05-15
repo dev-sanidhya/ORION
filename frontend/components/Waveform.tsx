@@ -20,7 +20,9 @@ export default function Waveform() {
   const normalized = Math.min(amplitude / 10000, 1);
 
   return (
-    <div className="flex items-end justify-center gap-1 rounded-full border border-white/8 bg-white/[0.03] px-5 py-4">
+    <div
+      className={"flex items-end justify-center gap-1 rounded-full border border-white/8 bg-white/[0.03] px-5 py-4 " + (isIdle ? "orion-breathe" : "")}
+    >
       {Array.from({ length: BAR_COUNT }).map((_, index) => {
         const center = (BAR_COUNT - 1) / 2;
         const distance = Math.abs(index - center) / center;

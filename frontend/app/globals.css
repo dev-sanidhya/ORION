@@ -3,9 +3,21 @@
 @tailwind utilities;
 
 :root {
-  --orion-cyan: #00D4FF;
-  --orion-blue: #0066FF;
-  --orion-bg: #050A14;
+  --orion-bg: #040816;
+  --orion-surface: rgba(9, 18, 40, 0.68);
+  --orion-surface-strong: rgba(10, 20, 46, 0.9);
+  --orion-border: rgba(111, 194, 255, 0.16);
+  --orion-border-strong: rgba(111, 194, 255, 0.3);
+  --orion-cyan: #79e7ff;
+  --orion-ice: #d8f6ff;
+  --orion-blue: #3a8bff;
+  --orion-violet: #7f7cff;
+  --orion-teal: #52ffc8;
+  --orion-amber: #ffb55f;
+  --orion-text: #d4e9f7;
+  --orion-dim: #7a96ad;
+  --orion-muted: #4c6780;
+  --orion-shadow: 0 24px 80px rgba(2, 6, 18, 0.55);
 }
 
 * {
@@ -14,54 +26,169 @@
   padding: 0;
 }
 
-body {
-  background-color: var(--orion-bg);
-  color: #A0C4D8;
-  font-family: 'Courier New', Courier, monospace;
-  overflow: hidden;
-  height: 100vh;
-  width: 100vw;
+html {
+  color-scheme: dark;
 }
 
-/* Scanline overlay effect */
+body {
+  min-height: 100vh;
+  width: 100%;
+  overflow: hidden;
+  color: var(--orion-text);
+  background:
+    radial-gradient(circle at 15% 20%, rgba(82, 255, 200, 0.12), transparent 28%),
+    radial-gradient(circle at 82% 14%, rgba(127, 124, 255, 0.18), transparent 26%),
+    radial-gradient(circle at 50% 82%, rgba(58, 139, 255, 0.14), transparent 34%),
+    linear-gradient(180deg, #050916 0%, #060b1e 45%, #040713 100%);
+  font-family: var(--font-sans), sans-serif;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(121, 231, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(121, 231, 255, 0.04) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(circle at center, black 35%, transparent 90%);
+  opacity: 0.22;
+}
+
 body::after {
   content: "";
   position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 212, 255, 0.015) 2px,
-    rgba(0, 212, 255, 0.015) 4px
-  );
+  inset: 0;
   pointer-events: none;
-  z-index: 9999;
+  background:
+    radial-gradient(circle at center, transparent 35%, rgba(4, 8, 22, 0.38) 100%),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 3px,
+      rgba(121, 231, 255, 0.018) 4px
+    );
+  opacity: 0.85;
 }
 
-/* Glow utilities */
-.glow-cyan {
-  text-shadow: 0 0 10px rgba(0, 212, 255, 0.8), 0 0 20px rgba(0, 212, 255, 0.4);
+button,
+input,
+textarea {
+  font: inherit;
 }
 
-.glow-border {
-  box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.2), inset 0 0 20px rgba(0, 212, 255, 0.03);
+button {
+  cursor: pointer;
 }
 
-/* Subtle background grid */
-.hud-grid {
+.orion-shell {
+  position: relative;
+  min-height: 100vh;
+  isolation: isolate;
+}
+
+/* backdrop-filter removed - it was applied to ~7 large panels at once, which
+   forces a fullscreen GPU readback every frame. Solid translucent gradient
+   keeps the visual depth at a fraction of the cost. */
+.orion-panel {
+  background: linear-gradient(180deg, rgba(14, 24, 54, 0.88), rgba(6, 14, 32, 0.86));
+  border: 1px solid var(--orion-border);
+  box-shadow: var(--orion-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.orion-panel-strong {
+  background: linear-gradient(180deg, rgba(12, 22, 48, 0.95), rgba(6, 12, 30, 0.93));
+  border: 1px solid var(--orion-border-strong);
+  box-shadow: 0 34px 120px rgba(2, 6, 18, 0.68), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.orion-grid {
   background-image:
-    linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+    linear-gradient(rgba(121, 231, 255, 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(121, 231, 255, 0.028) 1px, transparent 1px);
   background-size: 40px 40px;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: #050A14; }
-::-webkit-scrollbar-thumb { background: #0D2040; border-radius: 2px; }
-
-@keyframes scanPulse {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
+.orion-text-glow {
+  text-shadow: 0 0 18px rgba(121, 231, 255, 0.38);
 }
+
+.orion-outline {
+  border: 1px solid rgba(121, 231, 255, 0.14);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(121, 231, 255, 0.46), rgba(58, 139, 255, 0.28));
+}
+
+input[type="range"] {
+  appearance: none;
+  background: transparent;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(82, 255, 200, 0.5), rgba(121, 231, 255, 0.38));
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  margin-top: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(216, 246, 255, 0.6);
+  background: linear-gradient(180deg, #d8f6ff, #79e7ff);
+  box-shadow: 0 0 18px rgba(121, 231, 255, 0.4);
+}
+
+@keyframes drift {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -12px, 0) scale(1.03);
+  }
+}
+
+@keyframes pulse-soft {
+  0%, 100% {
+    opacity: 0.56;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* GPU-only motion primitives - transform + opacity only.
+   These compose at composite stage, no paint/layout cost. */
+@keyframes orion-spin-slow {
+  to { transform: rotate(360deg); }
+}
+@keyframes orion-spin-rev {
+  to { transform: rotate(-360deg); }
+}
+@keyframes orion-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50%      { transform: scale(1.03); opacity: 1; }
+}
+@keyframes orion-shimmer {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 0.75; }
+}
+
+.orion-spin-slow { animation: orion-spin-slow 42s linear infinite; transform-origin: center; will-change: transform; }
+.orion-spin-rev  { animation: orion-spin-rev 32s linear infinite; transform-origin: center; will-change: transform; }
+.orion-breathe   { animation: orion-breathe 5s ease-in-out infinite; will-change: transform, opacity; }
+.orion-shimmer   { animation: orion-shimmer 4.5s ease-in-out infinite; }

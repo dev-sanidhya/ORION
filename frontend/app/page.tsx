@@ -38,15 +38,38 @@ export default function Dashboard() {
     <main className="orion-shell h-screen overflow-hidden px-4 py-4 sm:px-6 sm:py-6 xl:px-8">
       <WidgetOverlay />
 
-      {/* Single low-cost gradient background. The previous stack of three
-          blur-3xl orbs forced fullscreen GPU compositing for no real gain. */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(circle at 22% 18%, rgba(34,211,238,0.10), transparent 45%), radial-gradient(circle at 80% 24%, rgba(139,92,246,0.10), transparent 50%), radial-gradient(circle at 50% 92%, rgba(14,165,233,0.10), transparent 55%)",
-        }}
-      />
+      {/* Animated gradient backdrop - radial gradients drift via transform
+          only (no blur-3xl, no filter). Adds movement without paint cost. */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div
+          className="absolute h-[28rem] w-[28rem] rounded-full"
+          style={{
+            left: "6%",
+            top: "4%",
+            background: "radial-gradient(circle, rgba(34,211,238,0.12), transparent 65%)",
+            animation: "drift 14s ease-in-out infinite",
+          }}
+        />
+        <div
+          className="absolute h-[32rem] w-[32rem] rounded-full"
+          style={{
+            right: "4%",
+            top: "10%",
+            background: "radial-gradient(circle, rgba(139,92,246,0.14), transparent 65%)",
+            animation: "drift 18s ease-in-out infinite reverse",
+          }}
+        />
+        <div
+          className="absolute h-[36rem] w-[36rem] rounded-full"
+          style={{
+            left: "50%",
+            bottom: "0%",
+            transform: "translateX(-50%)",
+            background: "radial-gradient(circle, rgba(14,165,233,0.13), transparent 65%)",
+            animation: "drift 22s ease-in-out infinite",
+          }}
+        />
+      </div>
 
       <div className="relative z-10 flex h-full flex-col gap-4">
         <header className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
