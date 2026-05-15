@@ -447,4 +447,83 @@ without adding per-frame or per-audio-chunk work.
 
 **Current state: v0.6, idle CPU should be <5% backend, frontend GPU much
 lower. Motion preserved via CSS-only transforms.**
+
+---
+
+## v0.7 - Tier 1 features + Porcupine (2026-05-15)
+
+Shipped all 🟢 "Free" features from the roadmap plus Porcupine wake-word.
+
+### Backend
+- **`tools/typefully.py`** - `create_draft()`, `recently_published()`.
+  One HTTP call per action, no background polling.
+- **`tools/notion.py`** - `append_daily_log()`, `append_idea()`. Auto-retries
+  without optional Note column if user's schema differs.
+- **`tools/calendar.py`** - parses Google Calendar private ICS URL.
+  10-min cache, fetch on demand or via periodic_tasks.
+- **`tools/projects.py`** - active project stored in SQLite facts table,
+  switches on user request. `list_projects()` walks PORTFOLIO_DIR.
+- **`tools/memory.py`** - added `search_conversations(query, limit, days)`.
+- **`tools/porcupine.py`** - wake-word detector, ~1% CPU.
+- **`listener.py`** - Porcupine frame-by-frame in the audio thread, runs
+  alongside clap detection. Old whisper wake-loop still there but opt-in.
+- **`main.py`** - regex side-channels in `handle_interaction` for:
+    - "idea: ..." -> auto-saves to Notion ideas DB
+    - "switch to <project>" -> changes active project + broadcasts
+  Plus new WS messages: `post_tweet`, `set_project`, `search_memory`,
+  `refresh_calendar`.
+- **Morning brief** now includes recent Typefully tweets as context.
+- **Evening wrap** writes a Notion daily log page (commits + tweets + summary).
+- Active project is now used everywhere instead of hardcoded ORION (git
+  widget, evening commits, etc.).
+
+### Frontend
+- **`CalendarCard`** - left rail. Shows next 4 events in 24h window with
+  relative day + time + location. Empty state when nothing's scheduled.
+- **`ProjectSwitcher`** - dropdown in the header next to the Config button.
+  Shows active project with a shimmer dot, dropdown lists other PORTFOLIO
+  repos.
+- **`ToastStack`** - bottom-right ephemeral toasts. Triggered by backend
+  `toast` events (idea saved, tweet scheduled, project switched).
+- **TweetOverlay** - now has a primary "Schedule to Typefully" button +
+  secondary Copy fallback. Wires through WS `post_tweet`.
+- **Wall mode** - pure CSS media query. At 1920px+ the Orb scales 1.18x,
+  at 2400px+ it scales 1.4x. Zero JS cost.
+- **Socket** - new methods: `postTweet`, `setProject`, `searchMemory`,
+  `refreshCalendar`.
+- **Store** - added calendar, activeProject, availableProjects, toasts,
+  memoryQuery, memoryResults fields with their setters.
+
+### Required env vars (drop in `backend/.env`)
+```
+# Wake-word (Porcupine) - free tier
+PORCUPINE_ACCESS_KEY=...
+PORCUPINE_KEYWORD=jarvis           # built-in, or use:
+# PORCUPINE_KEYWORD_PATH=wake/hey-orion.ppn
+
+# Tweet posting
+TYPEFULLY_API_KEY=...
+
+# Notion daily log + ideas
+NOTION_TOKEN=...
+NOTION_DAILY_DB_ID=...
+NOTION_IDEAS_DB_ID=...
+
+# Google Calendar (private ICS URL from calendar settings)
+GCAL_ICS_URL=https://calendar.google.com/calendar/ical/.../basic.ics
+```
+
+Features without keys stay silent (no crash), so partial config is fine.
+
+### Voice triggers for ideas / project switching
+- "Idea: build a JARVIS wall display in a vintage TV frame" -> Notion
+- "Save this idea: launch product on March 1" -> Notion
+- "ORION, switch to Vault" -> changes active project, git widget follows
+
+### Next up
+- Pomodoro / focus timer ring (Tier 2 #6)
+- Gmail unread chip (Tier 2 #9)
+- Spotify now playing (Tier 1 #3 - skipped in this batch; needs OAuth flow,
+  will revisit)
+- Custom "Hey ORION" Porcupine model (vs current built-in "jarvis")
 - openwakeword "Hey ORION" hotword
