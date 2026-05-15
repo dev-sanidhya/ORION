@@ -88,6 +88,24 @@ async def add_reminder(content: str, remind_at: str | None = None):
         await db.commit()
 
 
+async def search_conversations(query: str, limit: int = 10, days: int = 30) -> list[dict]:
+    """Substring search across the conversation log. Returns most recent matches first."""
+    from datetime import datetime, timedelta
+    if not query.strip():
+        return []
+    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    like = f"%{query.strip()}%"
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT role, content, timestamp FROM conversations "
+            "WHERE timestamp >= ? AND content LIKE ? "
+            "ORDER BY id DESC LIMIT ?",
+            (cutoff, like, limit),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [{"role": r[0], "content": r[1], "timestamp": r[2]} for r in rows]
+
+
 async def get_pending_reminders() -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
