@@ -41,6 +41,8 @@ class AudioListener:
         self._running = False
         self._loop: asyncio.AbstractEventLoop | None = None
         self._last_trigger = 0.0
+        self.clap_threshold = CLAP_THRESHOLD
+        self.current_amplitude: int = 0
 
         # Shared audio queue for the single capture thread
         self._audio_chunks: list[bytes] = []
@@ -95,9 +97,10 @@ class AudioListener:
                         self._audio_chunks.pop(0)
 
                 amp = int(np.abs(np.frombuffer(data, dtype=np.int16)).max())
+                self.current_amplitude = amp
 
                 # --- Clap detection ---
-                if amp > CLAP_THRESHOLD:
+                if amp > self.clap_threshold:
                     now = time.time()
                     gap = now - last_clap
                     if CLAP_MIN_GAP < gap < CLAP_WINDOW:

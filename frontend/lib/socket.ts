@@ -48,6 +48,9 @@ class OrionSocket {
           case "location":
             store.setLocation(msg.data);
             break;
+          case "amplitude":
+            store.setAmplitude(msg.value);
+            break;
         }
       } catch (e) {
         console.error("[ORION] Bad WS message", e);
@@ -58,6 +61,12 @@ class OrionSocket {
   trigger() {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: "trigger" }));
+    }
+  }
+
+  setThreshold(value: number) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: "set_threshold", value }));
     }
   }
 

@@ -143,32 +143,58 @@ function ShortcutsHint() {
 
 function SettingsPanel() {
   const [city, setCity] = useState("");
+  const threshold = useOrionStore((s) => s.clapThreshold);
+  const setClapThreshold = useOrionStore((s) => s.setClapThreshold);
+
+  const handleThreshold = (v: number) => {
+    setClapThreshold(v);
+    orionSocket.setThreshold(v);
+  };
 
   return (
-    <div className="flex items-center gap-6 flex-wrap">
+    <div className="flex flex-col gap-3">
       <span className="text-xs text-orion-cyan tracking-widest">SYSTEM CONFIG</span>
-      <div className="flex items-center gap-2">
-        <label className="text-xs text-orion-dim tracking-widest">LOCATION OVERRIDE</label>
-        <input
-          value={city}
-          onChange={(e) => setCity(e.target.value)}
-          placeholder="e.g. Aligarh"
-          className="bg-transparent border border-orion-border rounded-sm px-2 py-1 text-xs text-orion-text focus:border-orion-cyan outline-none w-32"
-        />
-        <button
-          onClick={() => city && alert(`Set ORION_CITY=${city} in backend/.env and restart backend.`)}
-          className="text-xs px-2 py-1 rounded-sm border border-orion-border text-orion-dim hover:text-orion-cyan hover:border-orion-cyan transition-colors"
-        >
-          APPLY
-        </button>
+
+      {/* Clap sensitivity */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <label className="text-xs text-orion-dim tracking-widest w-40">CLAP SENSITIVITY</label>
+        <div className="flex items-center gap-3 flex-1">
+          <span className="text-xs text-orion-dim">SENSITIVE</span>
+          <input
+            type="range" min={800} max={7000} step={100}
+            value={threshold}
+            onChange={(e) => handleThreshold(Number(e.target.value))}
+            className="flex-1 accent-cyan-400 h-1"
+          />
+          <span className="text-xs text-orion-dim">LESS</span>
+          <span className="text-xs text-orion-text font-mono w-12 text-right">{threshold}</span>
+        </div>
       </div>
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-orion-dim tracking-widest">BACKEND</span>
-        <span className="text-xs text-orion-text">localhost:8000</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-orion-dim tracking-widest">MODEL</span>
-        <span className="text-xs text-orion-text">claude-sonnet-4-6</span>
+
+      {/* Location + model row */}
+      <div className="flex items-center gap-6 flex-wrap">
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-orion-dim tracking-widest">LOCATION</label>
+          <input
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+            placeholder="e.g. Aligarh"
+            className="bg-transparent border border-orion-border rounded-sm px-2 py-1 text-xs text-orion-text focus:border-orion-cyan outline-none w-28"
+          />
+          <button
+            onClick={() => city && alert(`Set ORION_CITY=${city} in backend/.env and restart.`)}
+            className="text-xs px-2 py-1 rounded-sm border border-orion-border text-orion-dim hover:text-orion-cyan hover:border-orion-cyan transition-colors"
+          >
+            APPLY
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-orion-dim tracking-widest">MODEL</span>
+          <span className="text-xs text-orion-text">claude-haiku-4-5</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-orion-dim tracking-widest">SAY "SLEEP" TO DISMISS</span>
+        </div>
       </div>
     </div>
   );

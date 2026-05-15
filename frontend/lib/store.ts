@@ -27,12 +27,16 @@ interface OrionStore {
   weather: WeatherData | null;
   location: { city: string; country: string } | null;
   connected: boolean;
+  amplitude: number;
+  clapThreshold: number;
 
   setState: (s: AssistantState) => void;
   addTranscript: (role: "user" | "orion", content: string) => void;
   setWeather: (data: WeatherData) => void;
   setLocation: (loc: { city: string; country: string }) => void;
   setConnected: (v: boolean) => void;
+  setAmplitude: (v: number) => void;
+  setClapThreshold: (v: number) => void;
 }
 
 export const useOrionStore = create<OrionStore>((set) => ({
@@ -41,6 +45,8 @@ export const useOrionStore = create<OrionStore>((set) => ({
   weather: null,
   location: null,
   connected: false,
+  amplitude: 0,
+  clapThreshold: 3500,
 
   setState: (s) => set({ state: s }),
 
@@ -55,4 +61,6 @@ export const useOrionStore = create<OrionStore>((set) => ({
   setWeather: (data) => set({ weather: data }),
   setLocation: (loc) => set({ location: loc }),
   setConnected: (v) => set({ connected: v }),
+  setAmplitude: (v) => set({ amplitude: v }),
+  setClapThreshold: (v) => set({ clapThreshold: v }),
 }));

@@ -3,6 +3,7 @@ import json
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Set
 
 import uvicorn
@@ -17,16 +18,45 @@ from listener import AudioListener
 from stt import load_model, transcribe
 from tts import speak, start_tts_engine, stop_tts_engine
 from tools.location import get_location
-from tools.memory import init_db, save_conversation, get_pending_reminders
+from tools.memory import init_db, save_conversation, get_pending_reminders, get_recent_conversations
 from tools.weather import get_weather
 
-# ---- State ----------------------------------------------------------------
+MEMORY_FILE = Path(__file__).parent / "db" / "memory.json"
+
+SLEEP_PHRASES = {
+    "sleep", "that's all", "goodnight", "goodbye", "go to sleep",
+    "stand by", "dismiss", "stop listening", "that will be all",
+    "thanks that's all", "thank you that's all",
+}
 
 connected_clients: Set[WebSocket] = set()
 _context: dict = {}
 _interaction_lock = asyncio.Lock()
 _morning_briefed = False
 _evening_briefed = False
+_session_history: list[dict] = []
+
+
+# ---- Memory (JSON) -------------------------------------------------------
+
+def _load_memory() -> list[dict]:
+    try:
+        if MEMORY_FILE.exists():
+            data = json.loads(MEMORY_FILE.read_text())
+            return data.get("conversations", [])[-100:]
+    except Exception:
+        pass
+    return []
+
+
+def _save_memory(entry: dict):
+    try:
+        MEMORY_FILE.parent.mkdir(exist_ok=True)
+        data = {"conversations": _load_memory() + [entry]}
+        data["conversations"] = data["conversations"][-200:]
+        MEMORY_FILE.write_text(json.dumps(data, indent=2))
+    except Exception as e:
+        print(f"[Memory] Save error: {e}")
 
 
 # ---- WebSocket broadcast --------------------------------------------------
@@ -50,43 +80,77 @@ async def set_state(state: str):
 # ---- Core interaction pipeline --------------------------------------------
 
 async def handle_interaction(source: str = "clap"):
+    global _session_history
+
     async with _interaction_lock:
+        first_turn = True
+        consecutive_silences = 0
+
         try:
-            await set_state("listening")
-            await speak("Yes boss?")
+            while True:
+                await set_state("listening")
 
-            loop = asyncio.get_event_loop()
-            wav_bytes = await loop.run_in_executor(None, listener.record_speech)
+                if first_turn:
+                    await speak("Yes boss?")
+                    first_turn = False
 
-            if not wav_bytes or len(wav_bytes) < 1000:
-                await set_state("idle")
-                return
+                loop = asyncio.get_event_loop()
+                wav_bytes = await loop.run_in_executor(None, listener.record_speech)
 
-            await set_state("thinking")
-            user_text = await transcribe(wav_bytes)
+                if not wav_bytes or len(wav_bytes) < 1000:
+                    consecutive_silences += 1
+                    if consecutive_silences >= 2:
+                        await set_state("idle")
+                        return
+                    continue
 
-            if not user_text.strip():
-                await speak("I didn't catch that, boss.")
-                await set_state("idle")
-                return
+                consecutive_silences = 0
+                await set_state("thinking")
+                user_text = await transcribe(wav_bytes)
 
-            await save_conversation("user", user_text)
-            await broadcast({"type": "transcript", "role": "user", "content": user_text})
+                if not user_text.strip():
+                    consecutive_silences += 1
+                    if consecutive_silences >= 2:
+                        await set_state("idle")
+                        return
+                    continue
 
-            response = await process(user_text, _context)
+                # Check sleep/dismiss phrases
+                lower = user_text.lower().strip().rstrip(".")
+                if any(phrase in lower for phrase in SLEEP_PHRASES):
+                    await set_state("speaking")
+                    await speak("Standing by, sir.")
+                    await set_state("idle")
+                    return
 
-            await save_conversation("orion", response)
-            await broadcast({"type": "transcript", "role": "orion", "content": response})
+                # Log + broadcast user turn
+                _session_history.append({"role": "user", "content": user_text})
+                entry = {"timestamp": datetime.now().isoformat(), "role": "user", "content": user_text}
+                _save_memory(entry)
+                await save_conversation("user", user_text)
+                await broadcast({"type": "transcript", "role": "user", "content": user_text})
 
-            await set_state("speaking")
-            await speak(response)
+                # Get response
+                response = await process(user_text, _context, _session_history)
+
+                # Log + broadcast ORION turn
+                _session_history.append({"role": "orion", "content": response})
+                _save_memory({"timestamp": datetime.now().isoformat(), "role": "orion", "content": response})
+                await save_conversation("orion", response)
+                await broadcast({"type": "transcript", "role": "orion", "content": response})
+
+                await set_state("speaking")
+                await speak(response)
+                # Stay in session - loop back to listening
 
         except Exception as e:
             import traceback
             print(f"[ORION] Interaction error: {e}")
             traceback.print_exc()
-            await broadcast({"type": "transcript", "role": "orion", "content": "Something went wrong on my end, boss."})
-
+            await broadcast({
+                "type": "transcript", "role": "orion",
+                "content": "Something went wrong on my end, boss."
+            })
         finally:
             await set_state("idle")
 
@@ -141,11 +205,12 @@ async def maybe_evening_wrap():
     if hour == 22 and not _evening_briefed:
         _evening_briefed = True
         try:
-            prompt = (
-                "Give Sanidhya a brief end-of-day wrap-up. Check what reminders are pending. "
-                "Keep it under 3 sentences, JARVIS style. Mention what tomorrow looks like if there's any context."
+            recent = _session_history[-10:] if _session_history else []
+            wrap = await process(
+                "Give Sanidhya a brief end-of-day wrap-up. Check what was built today with git log. "
+                "Mention any pending reminders. 3 sentences max, JARVIS style.",
+                _context, recent
             )
-            wrap = await process(prompt, _context)
             await save_conversation("orion", wrap)
             await broadcast({"type": "transcript", "role": "orion", "content": wrap})
             await set_state("speaking")
@@ -156,37 +221,41 @@ async def maybe_evening_wrap():
             await set_state("idle")
 
 
+# ---- Amplitude broadcasting ----------------------------------------------
+
+async def amplitude_broadcaster():
+    """Reads mic amplitude from listener and broadcasts at ~10fps."""
+    while True:
+        await asyncio.sleep(0.1)
+        amp = listener.current_amplitude
+        if connected_clients:
+            await broadcast({"type": "amplitude", "value": int(amp)})
+
+
 # ---- Periodic tasks -------------------------------------------------------
 
 async def periodic_tasks():
-    last_focus_check = datetime.now()
     last_interaction = datetime.now()
 
     while True:
-        await asyncio.sleep(60)  # check every minute
+        await asyncio.sleep(60)
         now = datetime.now()
 
-        # Context refresh every 10 minutes
         if now.minute % 10 == 0:
             await refresh_context()
 
-        # Morning brief check
         await maybe_morning_brief()
-
-        # Evening wrap check
         await maybe_evening_wrap()
 
-        # Reset daily flags at midnight
         if now.hour == 0 and now.minute == 0:
             global _morning_briefed, _evening_briefed
             _morning_briefed = False
             _evening_briefed = False
 
-        # Focus nudge - if no interaction for 90 min during working hours
-        if 9 <= now.hour <= 22:
-            idle_minutes = (now - last_interaction).total_seconds() / 60
-            if idle_minutes >= 90:
-                last_interaction = now  # reset so it doesn't spam
+        if 9 <= now.hour <= 22 and not _interaction_lock.locked():
+            idle_min = (now - last_interaction).total_seconds() / 60
+            if idle_min >= 90:
+                last_interaction = now
                 nudge = "Boss, you've been heads-down for 90 minutes. Consider taking a break."
                 await broadcast({"type": "transcript", "role": "orion", "content": nudge})
                 try:
@@ -198,7 +267,8 @@ async def periodic_tasks():
 # ---- Listener glue --------------------------------------------------------
 
 async def on_wake():
-    asyncio.create_task(handle_interaction("clap"))
+    if not _interaction_lock.locked():
+        asyncio.create_task(handle_interaction("wake"))
 
 
 listener = AudioListener(on_wake=on_wake)
@@ -209,25 +279,18 @@ listener = AudioListener(on_wake=on_wake)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-
-    # TTS engine must start before anything tries to speak
     start_tts_engine()
-
-    # Load STT model (blocks ~5s on first run)
     load_model()
-
-    # Fetch initial context
     await refresh_context()
 
-    # Start clap listener after a 2s delay to avoid startup audio noise triggering it
     loop = asyncio.get_event_loop()
     await asyncio.sleep(2)
     listener.start(loop)
 
-    # Start periodic tasks
     asyncio.create_task(periodic_tasks())
+    asyncio.create_task(amplitude_broadcaster())
 
-    print("[ORION] Online. Double clap or Ctrl+Space to activate.")
+    print("[ORION] Online. Double clap, hold Space, or say 'wake up' to activate.")
     yield
 
     listener.stop()
@@ -239,10 +302,8 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:3001",
+        "http://localhost:3000", "http://localhost:3001",
+        "http://127.0.0.1:3000", "http://127.0.0.1:3001",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -257,17 +318,13 @@ async def ws_endpoint(websocket: WebSocket):
     await websocket.accept()
     connected_clients.add(websocket)
 
-    # Push current context immediately on connect
     if _context.get("weather"):
         await websocket.send_json({"type": "weather", "data": _context["weather"]})
     if _context.get("city"):
         await websocket.send_json({"type": "location", "data": {
-            "city": _context["city"],
-            "country": _context.get("country", ""),
+            "city": _context["city"], "country": _context.get("country", ""),
         }})
     await websocket.send_json({"type": "state", "state": "idle"})
-
-    # Trigger morning brief for this session if applicable
     asyncio.create_task(maybe_morning_brief())
 
     try:
@@ -278,6 +335,11 @@ async def ws_endpoint(websocket: WebSocket):
             if msg_type == "trigger":
                 if not _interaction_lock.locked():
                     asyncio.create_task(handle_interaction("manual"))
+
+            elif msg_type == "set_threshold":
+                value = int(data.get("value", 3500))
+                listener.clap_threshold = max(500, min(8000, value))
+                print(f"[ORION] Clap threshold set to {listener.clap_threshold}")
 
             elif msg_type == "ping":
                 await websocket.send_json({"type": "pong"})
