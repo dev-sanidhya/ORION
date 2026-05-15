@@ -34,3 +34,5 @@ desktop.ini
 *.out.log
 *.err.log
 frontend/tsconfig.tsbuildinfo
+
+backend/db/memory.json
