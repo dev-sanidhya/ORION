@@ -1,6 +1,7 @@
 import asyncio
 import io
 import os
+import threading
 from faster_whisper import WhisperModel
 
 # Two models:
@@ -16,12 +17,10 @@ WAKE_PHRASES = ["wake up", "hey orion", "orion wake", "wake orion"]
 
 
 def load_model():
-    global _wake_model, _main_model, _groq_client
+    """Non-blocking - kicks off model downloads in background threads."""
+    global _groq_client
 
-    device = os.getenv("WHISPER_DEVICE", "cuda")
-    compute = "float16" if device == "cuda" else "int8"
-
-    # Groq setup - dramatically better accuracy, free tier
+    # Groq setup first - instant, no download
     groq_key = os.getenv("GROQ_API_KEY", "").strip()
     if groq_key:
         try:
@@ -31,22 +30,34 @@ def load_model():
         except Exception as e:
             print(f"[STT] Groq init failed: {e}")
 
-    # Wake word model - tiny, stays resident for always-on detection
-    print("[STT] Loading wake-word model (tiny)...")
+    # Load both whisper models in background - don't block server startup
+    threading.Thread(target=_load_wake_model, daemon=True, name="load-wake-model").start()
+    threading.Thread(target=_load_main_model, daemon=True, name="load-main-model").start()
+
+
+def _load_wake_model():
+    global _wake_model
+    device = os.getenv("WHISPER_DEVICE", "cuda")
+    compute = "float16" if device == "cuda" else "int8"
+    print("[STT] Downloading wake model (tiny, ~39MB)...")
     try:
         _wake_model = WhisperModel("tiny", device=device, compute_type=compute)
     except Exception:
         _wake_model = WhisperModel("tiny", device="cpu", compute_type="int8")
-    print("[STT] Wake model ready")
+    print("[STT] Wake model (tiny) ready")
 
-    # Main transcription model - small for local fallback
-    main_size = os.getenv("WHISPER_MODEL", "small")
-    print(f"[STT] Loading main model ({main_size})...")
+
+def _load_main_model():
+    global _main_model
+    device = os.getenv("WHISPER_DEVICE", "cuda")
+    compute = "float16" if device == "cuda" else "int8"
+    size = os.getenv("WHISPER_MODEL", "small")
+    print(f"[STT] Downloading main model ({size})...")
     try:
-        _main_model = WhisperModel(main_size, device=device, compute_type=compute)
+        _main_model = WhisperModel(size, device=device, compute_type=compute)
     except Exception:
-        _main_model = WhisperModel(main_size, device="cpu", compute_type="int8")
-    print(f"[STT] Main model ({main_size}) ready")
+        _main_model = WhisperModel(size, device="cpu", compute_type="int8")
+    print(f"[STT] Main model ({size}) ready")
 
 
 def _transcribe_groq_sync(wav_bytes: bytes) -> str:
