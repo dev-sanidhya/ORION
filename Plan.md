@@ -341,4 +341,110 @@ reminders (
 **Next up:**
 - Test everything end-to-end (restart both servers)
 - Typefully MCP integration for tweet drafting
+
+---
+
+## v0.6 - Scalability Pass (2026-05-15)
+
+Laptop was hanging on start. Did a perf audit. Root causes + fixes:
+
+### Backend (heaviest wins)
+- **Continuous Whisper wake-phrase loop killed unless `ORION_WAKE_PHRASE=1`.**
+  The listener used to run faster-whisper end-to-end every ~1s on rolling 2s clips.
+  That alone pegged CPU/GPU. Now opt-in.
+- **Local Whisper models are lazy-loaded.** When `GROQ_API_KEY` is set, tiny+small
+  no longer load at all (saves ~1-2 GB RAM, several seconds of startup, no CUDA init).
+  Set `ORION_LOCAL_STT=1` to force-load as offline fallback.
+- **Dead `_audio_chunks` rolling buffer removed** - was holding 30s of PCM under
+  a lock and never read.
+- **Amplitude broadcaster gated to active states only.** Was 10fps regardless,
+  now 6fps while listening/speaking, ~2Hz idle ticks, near-duplicate values
+  suppressed. Stops the constant WS spam + React re-renders.
+- **Mic amplitude decimated 3x** in the capture thread before writing to the
+  shared state (UI never needed 64ms granularity).
+
+### Frontend (paint/composite cost)
+- **`backdrop-filter: blur(26-30px)` removed from all `.orion-panel` surfaces.**
+  Was applied to ~7 large panels simultaneously - fullscreen GPU readback every
+  frame. Replaced with solid translucent gradients.
+- **Stacked `blur-3xl` gradient orbs removed** from page background + widget
+  overlay. Replaced with cheap radial-gradient orbs that drift via `transform`
+  only (no `filter`).
+- **Waveform**: 28 framer-motion components at idle -> plain divs at idle.
+  Container does one CSS `breathe` keyframe instead.
+- **Orb**: animated `box-shadow` keyframes (worst offender, forces paint)
+  removed. Rotating rings moved from framer-motion to pure CSS keyframes
+  (`orion-spin-slow`, `orion-spin-rev`). Halo `breathe` is transform+opacity
+  only - no animated `filter: blur()`.
+- New cheap GPU primitives in `globals.css`: `orion-spin-slow`,
+  `orion-spin-rev`, `orion-breathe`, `orion-shimmer`. Rule of thumb: transform
+  + opacity only. No filter, no backdrop-filter, no animated box-shadow, no
+  width/height keyframes.
+
+### Mental model going forward
+- Anything that runs every frame must use transform/opacity only.
+- Anything that runs every audio chunk (~16ms) must not spawn a model.
+- Anything that runs every WS message must not re-render 28 motion components.
+
+---
+
+## Feature Roadmap (cheap + high-leverage)
+
+Constraint: laptop is the bottleneck. Pick features that add product surface
+without adding per-frame or per-audio-chunk work.
+
+### Tier 1 - cheap, high impact (next)
+- **Typefully MCP for real tweet posting.** Replace "copy to clipboard" with
+  one-click schedule-to-Typefully from the TweetOverlay. MCP already
+  connected. Pure I/O - zero runtime cost.
+- **Calendar widget**. Google Calendar via the gcal MCP (already connected).
+  Show today's next 3 events in a new `CalendarCard` on the left rail.
+  Refresh every 10 min in `periodic_tasks` - no per-frame cost.
+- **Spotify "now playing" chip.** Spotify MCP already connected. Small text
+  chip near the clock. Poll every 30s.
+- **Conversation search.** Already storing in SQLite via `tools/memory.py`.
+  Add a "search memory" tool to the brain so "what did I say about X last
+  week" works. Pure DB query.
+- **Daily X analytics digest** in morning brief. Recently-published tweets
+  from Typefully + counts. One API call per morning.
+
+### Tier 2 - feature breadth, still cheap
+- **Pomodoro / focus timer.** Backend tracks session, broadcasts state.
+  Frontend shows a thin CSS ring drain (transform-based) around the Orb.
+  Zero per-frame JS.
+- **Project switcher.** Multi-project context (PORTFOLIO has more than ORION).
+  `git log` for the active project, swappable via voice ("ORION, switch to
+  Vault"). Just a path swap + cached git output.
+- **Notion daily log.** Notion MCP already connected. End-of-day wrap-up
+  auto-writes to a daily log page. One API call per evening.
+- **Email triage chip.** Gmail MCP - count unreads in important labels, surface
+  in a chip. Poll every 5 min.
+- **Linear / GitHub issue ticker** in the NewsStrip slot when no news. RSS or
+  MCP-fetched, refresh every 5 min.
+
+### Tier 3 - more ambitious but still GPU-cheap
+- **Multi-display layouts.** Detect screen width, switch to a "wall mode"
+  layout (giant orb + ticker) when on the external display, "cockpit mode" on
+  laptop. Pure CSS.
+- **Voice notes -> ideas DB.** Say "ORION, idea: ...". Brain extracts and
+  appends to a Notion ideas database via MCP. Searchable later via memory tool.
+- **Reading list.** Tab snapshot to a Notion/sqlite list with summaries
+  (Claude). One Claude call per save.
+- **Screenshot OCR + commentary.** Press a hotkey -> screenshot -> Claude
+  vision describes / answers questions. Manual trigger only, so cost is
+  bounded.
+- **Wake-word via porcupine instead of Whisper.** Picovoice porcupine runs in
+  ~1% CPU on a fixed wakeword model - way cheaper than rolling Whisper.
+  Single-purpose audio classifier, no transcription. Would let us re-enable
+  wake-word by default without the hang.
+
+### Explicitly NOT doing now
+- Real-time vision pipeline (camera-on always).
+- Local LLM (use Claude via cloud - free local would burn the laptop again).
+- Always-on screen-capture context (replace with manual hotkey trigger).
+
+---
+
+**Current state: v0.6, idle CPU should be <5% backend, frontend GPU much
+lower. Motion preserved via CSS-only transforms.**
 - openwakeword "Hey ORION" hotword

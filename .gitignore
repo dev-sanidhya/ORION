@@ -29,3 +29,8 @@ desktop.ini
 # Whisper model cache (large files)
 *.bin
 *.pt
+
+# Runtime logs
+*.out.log
+*.err.log
+frontend/tsconfig.tsbuildinfo
