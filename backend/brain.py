@@ -68,30 +68,34 @@ def _build_prompt(user_message: str, context: dict, history: list) -> str:
     )
 
 
-async def process(user_message: str, context: dict, history: list = []) -> str:
-    prompt = _build_prompt(user_message, context, history)
-    response_parts = []
+_SDK_OPTIONS = lambda: ClaudeCodeOptions(
+    model=MODEL,
+    system_prompt=SYSTEM_PROMPT,
+    max_turns=5,
+    allowed_tools=["Bash", "Read", "Glob", "Grep", "WebFetch", "WebSearch"],
+    permission_mode="bypassPermissions",
+    cwd=PORTFOLIO_DIR,
+)
 
-    async for msg in query(
-        prompt=prompt,
-        options=ClaudeCodeOptions(
-            model=MODEL,
-            system_prompt=SYSTEM_PROMPT,
-            max_turns=5,
-            allowed_tools=["Bash", "Read", "Glob", "Grep", "WebFetch", "WebSearch"],
-            permission_mode="bypassPermissions",
-            cwd=PORTFOLIO_DIR,
-        )
-    ):
+
+async def process_stream(user_message: str, context: dict, history: list = []):
+    """Async generator - yields text chunks as each AssistantMessage arrives."""
+    prompt = _build_prompt(user_message, context, history)
+    async for msg in query(prompt=prompt, options=_SDK_OPTIONS()):
         if isinstance(msg, AssistantMessage):
             for block in msg.content:
-                if isinstance(block, TextBlock):
-                    response_parts.append(block.text)
+                if isinstance(block, TextBlock) and block.text.strip():
+                    yield block.text
         elif isinstance(msg, ResultMessage):
             if msg.is_error:
-                print(f"[Brain] SDK error in result: {msg}")
+                print(f"[Brain] SDK error: {msg}")
 
-    result = " ".join(response_parts).strip()
+
+async def process(user_message: str, context: dict, history: list = []) -> str:
+    parts = []
+    async for chunk in process_stream(user_message, context, history):
+        parts.append(chunk)
+    result = " ".join(parts).strip()
     if not result:
         return "I ran into an issue processing that, boss."
     print(f"[Brain] {result[:100]}")

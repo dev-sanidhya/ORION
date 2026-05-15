@@ -11,6 +11,7 @@ import NewsStrip from "@/components/NewsStrip";
 import Waveform from "@/components/Waveform";
 import GitPanel from "@/components/GitPanel";
 import TweetPreview from "@/components/TweetPreview";
+import WidgetOverlay from "@/components/WidgetOverlay";
 
 export default function Dashboard() {
   const connected = useOrionStore((s) => s.connected);
@@ -34,6 +35,7 @@ export default function Dashboard() {
 
   return (
     <main className="w-screen h-screen flex flex-col p-5 gap-3 overflow-hidden select-none">
+      <WidgetOverlay />
 
       {/* Top bar */}
       <header className="flex items-center justify-between flex-shrink-0">

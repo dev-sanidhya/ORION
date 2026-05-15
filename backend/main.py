@@ -13,17 +13,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
-from brain import process, build_morning_brief
+from brain import process, process_stream, build_morning_brief
 from listener import AudioListener
 from stt import load_model, transcribe
-from tts import speak, start_tts_engine, stop_tts_engine
+import re
+from tts import speak, enqueue, start_tts_engine, stop_tts_engine
 from tools.location import get_location
 from tools.memory import init_db, save_conversation, get_pending_reminders, get_recent_conversations
 from tools.weather import get_weather
 
 MEMORY_FILE = Path(__file__).parent / "db" / "memory.json"
 
-import re
 import subprocess
 
 SLEEP_PHRASES = {
@@ -46,6 +46,20 @@ PORTFOLIO_DIR = os.getenv("PORTFOLIO_DIR", r"C:\Users\shish\Desktop\PORTFOLIO")
 ORION_DIR = os.path.join(PORTFOLIO_DIR, "ORION")
 
 _widget_blur_task: asyncio.Task | None = None
+
+
+def _pop_sentences(buffer: str) -> tuple[list[str], str]:
+    """Extract complete sentences from buffer, return (sentences, remaining)."""
+    parts = re.split(r'(?<=[.!?])\s+(?=[A-Z"\'])', buffer)
+    if len(parts) > 1:
+        complete = [p.strip() for p in parts[:-1] if p.strip() and len(p.strip()) > 3]
+        return complete, parts[-1]
+    return [], buffer
+
+
+def _is_tweet_content(text: str) -> bool:
+    t = text.upper()
+    return "[TWEET]" in t or "[/TWEET]" in t
 
 
 def _extract_tweet(response: str) -> tuple[str, str | None]:
@@ -135,16 +149,12 @@ async def handle_interaction(source: str = "clap"):
     global _session_history
 
     async with _interaction_lock:
-        first_turn = True
         consecutive_silences = 0
 
         try:
             while True:
+                # Silent listen - no "yes boss?" prompt
                 await set_state("listening")
-
-                if first_turn:
-                    await speak("Yes boss?")
-                    first_turn = False
 
                 loop = asyncio.get_event_loop()
                 wav_bytes = await loop.run_in_executor(None, listener.record_speech)
@@ -152,7 +162,6 @@ async def handle_interaction(source: str = "clap"):
                 if not wav_bytes or len(wav_bytes) < 1000:
                     consecutive_silences += 1
                     if consecutive_silences >= 2:
-                        await set_state("idle")
                         return
                     continue
 
@@ -163,50 +172,66 @@ async def handle_interaction(source: str = "clap"):
                 if not user_text.strip():
                     consecutive_silences += 1
                     if consecutive_silences >= 2:
-                        await set_state("idle")
                         return
                     continue
 
-                # Check sleep/dismiss phrases
+                # Dismiss phrases - silently return to idle
                 lower = user_text.lower().strip().rstrip(".")
                 if any(phrase in lower for phrase in SLEEP_PHRASES):
-                    await set_state("speaking")
-                    await speak("Standing by, sir.")
-                    await set_state("idle")
                     return
 
-                # Log + broadcast user turn
+                # Broadcast user turn
                 _session_history.append({"role": "user", "content": user_text})
-                entry = {"timestamp": datetime.now().isoformat(), "role": "user", "content": user_text}
-                _save_memory(entry)
+                _save_memory({"timestamp": datetime.now().isoformat(), "role": "user", "content": user_text})
                 await save_conversation("user", user_text)
                 await broadcast({"type": "transcript", "role": "user", "content": user_text})
 
-                # Get response
-                response = await process(user_text, _context, _session_history)
+                # Stream response - TTS starts on first complete sentence, no waiting
+                full_response = ""
+                buffer = ""
+                tts_events: list[asyncio.Event] = []
+                speaking_started = False
 
-                # Extract tweet if present, clean response
-                response, tweet_text = _extract_tweet(response)
+                async for chunk in process_stream(user_text, _context, _session_history):
+                    buffer += chunk
+                    full_response += chunk
+                    sentences, buffer = _pop_sentences(buffer)
+                    for sentence in sentences:
+                        if sentence and not _is_tweet_content(sentence):
+                            if not speaking_started:
+                                await set_state("speaking")
+                                speaking_started = True
+                            tts_events.append(enqueue(sentence, loop))
+
+                # Flush remaining buffer
+                if buffer.strip() and not _is_tweet_content(buffer):
+                    if not speaking_started:
+                        await set_state("speaking")
+                    tts_events.append(enqueue(buffer.strip(), loop))
+
+                full_response = full_response.strip() or "I ran into an issue, boss."
+                full_response, tweet_text = _extract_tweet(full_response)
 
                 # Log + broadcast ORION turn
-                _session_history.append({"role": "orion", "content": response})
-                _save_memory({"timestamp": datetime.now().isoformat(), "role": "orion", "content": response})
-                await save_conversation("orion", response)
-                await broadcast({"type": "transcript", "role": "orion", "content": response})
+                _session_history.append({"role": "orion", "content": full_response})
+                _save_memory({"timestamp": datetime.now().isoformat(), "role": "orion", "content": full_response})
+                await save_conversation("orion", full_response)
+                await broadcast({"type": "transcript", "role": "orion", "content": full_response})
 
                 # Widget focus: tweet takes priority, then keyword detection
                 if tweet_text:
                     await broadcast({"type": "widget_focus", "widget": "tweet", "data": {"text": tweet_text}})
                     await _schedule_widget_blur(20.0)
                 else:
-                    widget, data = _detect_widget(user_text, response)
+                    widget, data = _detect_widget(user_text, full_response)
                     if widget:
                         await broadcast({"type": "widget_focus", "widget": widget, "data": data})
                         await _schedule_widget_blur(12.0)
 
-                await set_state("speaking")
-                await speak(response)
-                # Stay in session - loop back to listening
+                # Wait for all TTS to finish before looping back to listen
+                if tts_events:
+                    await tts_events[-1].wait()
+                # Loop back to silent listening
 
         except Exception as e:
             import traceback

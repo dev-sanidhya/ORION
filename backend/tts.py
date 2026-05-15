@@ -69,8 +69,17 @@ async def speak(text: str):
     await done.wait()
 
 
+def enqueue(text: str, loop: asyncio.AbstractEventLoop) -> asyncio.Event:
+    """Queue a sentence, return its done event (non-blocking)."""
+    done = asyncio.Event()
+    if text.strip():
+        _tts_queue.put((text, done, loop))
+    else:
+        loop.call_soon_threadsafe(done.set)
+    return done
+
+
 def speak_sync(text: str):
-    """Fire-and-forget version - doesn't block caller."""
     if text.strip():
         _tts_queue.put((text, None, None))
 

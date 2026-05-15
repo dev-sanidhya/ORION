@@ -308,31 +308,37 @@ reminders (
 
 ## Current Session State
 
-**Phases 1-4 COMPLETE + STT upgrade** - Full system operational with Groq STT.
+**Phases 1-4 COMPLETE + v0.5 features shipped.**
 
-**Key fixes applied:**
-- TTS switched to pyttsx3 (edge-tts was 403ing from India)
-- CORS allows localhost:3000 and :3001
-- Location override via ORION_CITY env var (Aligarh)
-- Startup 2s delay before clap listener to avoid boot noise
-- Single PyAudio() instance prevents PortAudio segfault
-- Sequential STT model loading prevents CUDA double-init crash
-- "wake up" voice trigger + long-press Space added
-- Groq whisper-large-v3-turbo as primary STT (free tier, much better accuracy)
-- tiny whisper for wake phrase, small for local fallback only
+**Latest changes (this session):**
 
-**System boots cleanly showing:**
-```
-[STT] Groq ready (whisper-large-v3-turbo)
-[STT] Wake model ready
-[STT] Main model (small) ready
-[ORION] Listeners active: double-clap | say 'wake up' | hold Space
-[Keyboard] Long-press Space active
-[Audio] Capture thread started
-```
+### Streaming TTS (DONE)
+- `brain.py` now has `process_stream()` - async generator yielding text chunks as each `AssistantMessage` arrives from the SDK
+- `main.py` `handle_interaction()` pipes chunks into `_pop_sentences()` buffer, enqueues sentences for TTS the moment they're complete
+- First sentence plays while the rest of the response is still streaming - no waiting for full SDK response
+- Tweet content (between `[TWEET]` tags) is filtered from TTS automatically
 
-**Next up (Phase 5):**
+### Silent Persistent Mode (DONE)
+- No "Yes boss?" on activation - silently starts listening
+- No "Standing by" prompt - just loops back to listening after each response
+- Exits only on sleep phrases or 2 consecutive silences
+
+### Fullscreen Widget Overlay (DONE)
+- `frontend/components/WidgetOverlay.tsx` - fixed z-50 full-screen backdrop overlay
+- Spring animation in, click-backdrop to dismiss early
+- Weather: big temperature + all stats + summary
+- Git: full commit list with hash / message / age
+- Tweet: large draft + COPY & DISMISS button
+- News: hints to look at the news panel
+- Auto-dismisses via `widget_blur` event (12s/20s after ORION discusses it)
+- Added to `page.tsx` as first child of `<main>`
+
+### Architecture
+- `brain.py`: `process_stream()` + `process()` (sync wrapper for briefings)
+- `main.py`: `_pop_sentences()` buffer-based sentence extractor + `_is_tweet_content()` filter
+- Frontend: `WidgetOverlay` renders on top of everything, fully independent of inline widgets
+
+**Next up:**
+- Test everything end-to-end (restart both servers)
 - Typefully MCP integration for tweet drafting
 - openwakeword "Hey ORION" hotword
-- Computer control via computer-use MCP
-- X analytics widget
