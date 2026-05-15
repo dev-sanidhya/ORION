@@ -59,7 +59,13 @@ class AudioListener:
         threading.Thread(target=self._keyboard_thread, daemon=True, name="keyboard").start()
 
         modes = ["double-clap", "hold Space"]
-        if self._wake_enabled:
+        # Surface the configured wake word so the user knows what to say.
+        oww_name = os.getenv("ORION_WAKE_WORD", "").strip()
+        oww_path = os.getenv("ORION_WAKE_WORD_PATH", "").strip()
+        if oww_name or oww_path:
+            label = oww_name.replace("_", " ") if oww_name else "wake word"
+            modes.insert(0, f"say '{label}'")
+        elif self._wake_enabled:
             modes.insert(1, "say 'wake up'")
         print(f"[ORION] Listeners active: {' | '.join(modes)}")
 
@@ -81,6 +87,11 @@ class AudioListener:
             from stt import check_wake_phrase_sync as _wake_check
             check_wake_phrase_sync = _wake_check
 
+        # openWakeWord - cheap ONNX-based wake-word, no account needed.
+        # Loaded in-thread so any onnxruntime init lives where audio runs.
+        from tools import wakeword
+        oww_ready = wakeword.load()
+
         pa = pyaudio.PyAudio()
         stream = pa.open(
             format=pyaudio.paInt16, channels=CHANNELS,
@@ -93,7 +104,7 @@ class AudioListener:
         # update on every 64ms audio chunk. Saves on store re-renders too.
         amp_decim = 0
 
-        print(f"[Audio] Capture thread started (whisper_wake={self._wake_enabled})")
+        print(f"[Audio] Capture thread started (oww={oww_ready}, whisper_wake={self._wake_enabled})")
 
         while self._running:
             try:
@@ -118,6 +129,16 @@ class AudioListener:
                         time.sleep(1.0)
                     else:
                         last_clap = now
+
+                # --- openWakeWord (cheap, default when configured) ---
+                # The model is stateful internally, so we just feed raw
+                # int16 PCM as it arrives.
+                if oww_ready and wakeword.detect(data):
+                    print("[WakeWord] detected!")
+                    wakeword.reset()
+                    self._fire()
+                    time.sleep(WAKE_COOLDOWN)
+                    continue
 
                 # --- Whisper wake-phrase (opt-in heavy fallback) ---
                 if check_wake_phrase_sync is not None:

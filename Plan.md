@@ -560,4 +560,56 @@ Sanidhya's choice, candidates without account/API requirements:
 - Stay with clap + Space only.
 
 Recommendation: openWakeWord. Roughly the same CPU profile as Porcupine.
+
+---
+
+## v0.7.2 - openWakeWord shipped (2026-05-15)
+
+Replaced the (removed) Porcupine layer with openWakeWord.
+
+### What landed
+- `backend/tools/wakeword.py` - thin wrapper around `openwakeword.model.Model`.
+  Stateful (carries its own rolling window), so the audio thread just feeds
+  raw int16 PCM as it arrives - no buffer management on our side.
+- `backend/listener.py` - audio thread loads the model in-thread and calls
+  `wakeword.detect(data)` per chunk. On fire: prints, resets the model
+  state (no double-fire), triggers wake, sleeps the cooldown.
+- `backend/requirements.txt` - added `openwakeword==0.6.0` and
+  `onnxruntime==1.19.2` (openWakeWord uses ONNX inference).
+- Listener startup log now says e.g. `say 'hey jarvis' | double-clap | hold Space`.
+
+### Why this works without an account
+- Open-source MIT models, downloaded into the openwakeword cache on first
+  run (~10 MB). No signup, no API key, no expiry.
+- Built-in models: `hey_jarvis`, `alexa`, `hey_mycroft`, `hey_rhasspy`,
+  `weather`, `timer`. We default to `hey_jarvis`.
+
+### Cost profile
+- ~1-2% CPU continuous, similar to Porcupine. ONNX inference on 80ms frames.
+- First model download is one-time, then cached.
+- No GPU needed.
+
+### Env vars
+```
+ORION_WAKE_WORD=hey_jarvis       # built-in model (default)
+# ORION_WAKE_WORD_PATH=...       # OR custom .onnx model path
+ORION_WAKE_THRESHOLD=0.5         # 0.0-1.0, higher = stricter
+```
+
+### Setup
+```bash
+cd backend
+pip install -r requirements.txt
+# Models auto-download on first run. No further setup.
+```
+
+### Notes for "Hey ORION" later
+openWakeWord supports training custom models via their `train.py` script -
+takes a couple of hours of synthetic audio generation on a free Colab.
+Documented at github.com/dscripka/openwakeword. Not blocking - "hey jarvis"
+is already a great fit for the JARVIS vibe.
+
+### What's NOT in this version
+- Porcupine (removed in v0.7.1 - user can't get Picovoice account).
+- Notion integration (removed in v0.7.1 - explicit user request).
 - openwakeword "Hey ORION" hotword
