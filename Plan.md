@@ -308,13 +308,28 @@ reminders (
 
 ## Current Session State
 
-**Phases 1-4 COMPLETE** - Full system operational.
+**Phases 1-4 COMPLETE + STT upgrade** - Full system operational with Groq STT.
 
 **Key fixes applied:**
 - TTS switched to pyttsx3 (edge-tts was 403ing from India)
 - CORS allows localhost:3000 and :3001
 - Location override via ORION_CITY env var (Aligarh)
 - Startup 2s delay before clap listener to avoid boot noise
+- Single PyAudio() instance prevents PortAudio segfault
+- Sequential STT model loading prevents CUDA double-init crash
+- "wake up" voice trigger + long-press Space added
+- Groq whisper-large-v3-turbo as primary STT (free tier, much better accuracy)
+- tiny whisper for wake phrase, small for local fallback only
+
+**System boots cleanly showing:**
+```
+[STT] Groq ready (whisper-large-v3-turbo)
+[STT] Wake model ready
+[STT] Main model (small) ready
+[ORION] Listeners active: double-clap | say 'wake up' | hold Space
+[Keyboard] Long-press Space active
+[Audio] Capture thread started
+```
 
 **Next up (Phase 5):**
 - Typefully MCP integration for tweet drafting
