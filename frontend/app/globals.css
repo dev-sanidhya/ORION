@@ -192,3 +192,17 @@ input[type="range"]::-webkit-slider-thumb {
 .orion-spin-rev  { animation: orion-spin-rev 32s linear infinite; transform-origin: center; will-change: transform; }
 .orion-breathe   { animation: orion-breathe 5s ease-in-out infinite; will-change: transform, opacity; }
 .orion-shimmer   { animation: orion-shimmer 4.5s ease-in-out infinite; }
+
+/* "Wall mode" - when shown on a large external display, scale the central
+   Orb up so it reads from across the room. Pure CSS, no JS, no runtime cost. */
+@media (min-width: 1920px) {
+  .orion-wall .orion-orb-scene {
+    transform: scale(1.18);
+    transform-origin: center;
+  }
+}
+@media (min-width: 2400px) {
+  .orion-wall .orion-orb-scene {
+    transform: scale(1.4);
+  }
+}

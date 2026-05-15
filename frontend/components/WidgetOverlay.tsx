@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { WeatherData, useOrionStore } from "@/lib/store";
+import { orionSocket } from "@/lib/socket";
 
 export default function WidgetOverlay() {
   const activeWidget = useOrionStore((s) => s.activeWidget);
@@ -162,11 +163,16 @@ function TweetOverlay({ text, onClose }: { text: string; onClose: () => void }) 
     navigator.clipboard.writeText(text).then(onClose);
   };
 
+  const schedule = () => {
+    orionSocket.postTweet(text);
+    onClose();
+  };
+
   return (
     <OverlayFrame title="Tweet Draft" accent="#62A0FF" eyebrow="Social scene">
       <div className="rounded-[28px] border border-sky-300/15 bg-sky-300/[0.05] p-6">
         <div className="flex items-center justify-between gap-4">
-          <span className="text-[11px] uppercase tracking-[0.34em] text-sky-100/85">Ready to copy</span>
+          <span className="text-[11px] uppercase tracking-[0.34em] text-sky-100/85">Ready</span>
           <span
             className="font-mono text-sm"
             style={{ color: remaining < 20 ? "#FF6B7B" : remaining < 60 ? "#FFB55F" : "#8AA4BC" }}
@@ -179,12 +185,20 @@ function TweetOverlay({ text, onClose }: { text: string; onClose: () => void }) 
 
         <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-white/10 pt-4">
           <button
-            onClick={copy}
-            className="rounded-full border border-sky-300/25 bg-sky-300/10 px-4 py-2 text-[11px] uppercase tracking-[0.3em] text-sky-100 transition hover:bg-sky-300/15"
+            onClick={schedule}
+            className="rounded-full border border-sky-300/40 bg-sky-300/20 px-4 py-2 text-[11px] uppercase tracking-[0.3em] text-sky-100 transition hover:bg-sky-300/30"
           >
-            Copy and dismiss
+            Schedule to Typefully
           </button>
-          <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Paste into X to publish</span>
+          <button
+            onClick={copy}
+            className="rounded-full border border-white/15 bg-white/[0.05] px-4 py-2 text-[11px] uppercase tracking-[0.3em] text-slate-200 transition hover:bg-white/[0.1]"
+          >
+            Copy
+          </button>
+          <span className="text-xs uppercase tracking-[0.22em] text-slate-500">
+            Needs TYPEFULLY_API_KEY
+          </span>
         </div>
       </div>
     </OverlayFrame>

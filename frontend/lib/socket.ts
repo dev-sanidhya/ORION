@@ -57,6 +57,21 @@ class OrionSocket {
           case "widget_blur":
             store.setActiveWidget(null);
             break;
+          case "calendar":
+            store.setCalendar(msg.events ?? []);
+            break;
+          case "active_project":
+            store.setActiveProject(msg.name, msg.available);
+            break;
+          case "toast":
+            store.pushToast(msg.text);
+            break;
+          case "post_tweet_result":
+            store.pushToast(msg.ok ? "Tweet scheduled to Typefully" : `Post failed: ${msg.error ?? "unknown"}`);
+            break;
+          case "memory_results":
+            store.setMemoryResults(msg.query, msg.results ?? []);
+            break;
         }
       } catch (e) {
         console.error("[ORION] Bad WS message", e);
@@ -64,16 +79,34 @@ class OrionSocket {
     };
   }
 
-  trigger() {
+  private send(payload: object) {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: "trigger" }));
+      this.ws.send(JSON.stringify(payload));
     }
   }
 
+  trigger() {
+    this.send({ type: "trigger" });
+  }
+
   setThreshold(value: number) {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: "set_threshold", value }));
-    }
+    this.send({ type: "set_threshold", value });
+  }
+
+  postTweet(text: string) {
+    this.send({ type: "post_tweet", text });
+  }
+
+  setProject(name: string) {
+    this.send({ type: "set_project", name });
+  }
+
+  searchMemory(query: string) {
+    this.send({ type: "search_memory", query });
+  }
+
+  refreshCalendar() {
+    this.send({ type: "refresh_calendar" });
   }
 
   disconnect() {

@@ -30,7 +30,7 @@ export default function Orb() {
   const active = state !== "idle";
 
   return (
-    <div className="flex flex-col items-center gap-7 select-none">
+    <div className="orion-orb-scene flex flex-col items-center gap-7 select-none">
       <div className="relative flex items-center justify-center" style={{ width: 320, height: 320 }}>
         {/* Soft halo - breathes via transform/opacity only (no animated blur). */}
         <div

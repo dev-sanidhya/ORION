@@ -14,6 +14,9 @@ import GitPanel from "@/components/GitPanel";
 import TweetPreview from "@/components/TweetPreview";
 import WidgetOverlay from "@/components/WidgetOverlay";
 import SurfacePanel from "@/components/SurfacePanel";
+import CalendarCard from "@/components/CalendarCard";
+import ProjectSwitcher from "@/components/ProjectSwitcher";
+import ToastStack from "@/components/ToastStack";
 
 export default function Dashboard() {
   const connected = useOrionStore((s) => s.connected);
@@ -35,8 +38,9 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <main className="orion-shell h-screen overflow-hidden px-4 py-4 sm:px-6 sm:py-6 xl:px-8">
+    <main className="orion-shell orion-wall h-screen overflow-hidden px-4 py-4 sm:px-6 sm:py-6 xl:px-8">
       <WidgetOverlay />
+      <ToastStack />
 
       {/* Animated gradient backdrop - radial gradients drift via transform
           only (no blur-3xl, no filter). Adds movement without paint cost. */}
@@ -116,12 +120,15 @@ export default function Dashboard() {
 
           <SurfacePanel className="flex items-center justify-between gap-5 px-5 py-4 sm:min-w-[340px] sm:px-6">
             <ClockWidget />
-            <button
-              onClick={() => setShowSettings((v) => !v)}
-              className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-[11px] uppercase tracking-[0.35em] text-cyan-100 transition hover:border-cyan-200/40 hover:bg-cyan-300/15"
-            >
-              {showSettings ? "Hide Config" : "System Config"}
-            </button>
+            <div className="flex items-center gap-2">
+              <ProjectSwitcher />
+              <button
+                onClick={() => setShowSettings((v) => !v)}
+                className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-[11px] uppercase tracking-[0.35em] text-cyan-100 transition hover:border-cyan-200/40 hover:bg-cyan-300/15"
+              >
+                {showSettings ? "Hide" : "Config"}
+              </button>
+            </div>
           </SurfacePanel>
         </header>
 
@@ -143,6 +150,7 @@ export default function Dashboard() {
         <section className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
           <div className="flex min-h-0 flex-col gap-4">
             <WeatherCard />
+            <CalendarCard />
             <AnimatePresence mode="wait">
               {activeWidget === "git" ? <GitPanel key="git" /> : <ActiveProjectTile key="project" />}
             </AnimatePresence>
@@ -213,12 +221,13 @@ export default function Dashboard() {
 }
 
 function ActiveProjectTile() {
+  const activeProject = useOrionStore((s) => s.activeProject);
   return (
     <SurfacePanel className="flex h-full flex-col gap-5 px-5 py-5 sm:px-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-[11px] uppercase tracking-[0.38em] text-cyan-100/75">Active Project</div>
-          <div className="mt-3 text-2xl font-medium tracking-[0.16em] text-white">ORION</div>
+          <div className="mt-3 text-2xl font-medium tracking-[0.16em] text-white">{activeProject}</div>
         </div>
         <div className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-[10px] uppercase tracking-[0.28em] text-emerald-200">
           All phases active
