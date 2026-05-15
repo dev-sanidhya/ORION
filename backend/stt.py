@@ -17,42 +17,37 @@ WAKE_PHRASES = ["wake up", "hey orion", "orion wake", "wake orion"]
 
 
 def load_model():
-    """Non-blocking - kicks off model downloads in background threads."""
+    """Non-blocking - loads both whisper models sequentially in one background thread."""
     global _groq_client
 
-    # Groq setup first - instant, no download
     groq_key = os.getenv("GROQ_API_KEY", "").strip()
     if groq_key:
         try:
             from groq import Groq
             _groq_client = Groq(api_key=groq_key)
-            print("[STT] Groq client ready (whisper-large-v3-turbo)")
+            print("[STT] Groq ready (whisper-large-v3-turbo)")
         except Exception as e:
             print(f"[STT] Groq init failed: {e}")
 
-    # Load both whisper models in background - don't block server startup
-    threading.Thread(target=_load_wake_model, daemon=True, name="load-wake-model").start()
-    threading.Thread(target=_load_main_model, daemon=True, name="load-main-model").start()
+    # Sequential load in a single thread - avoids parallel CUDA context crashes
+    threading.Thread(target=_load_models_sequential, daemon=True, name="stt-loader").start()
 
 
-def _load_wake_model():
-    global _wake_model
+def _load_models_sequential():
+    """Loads tiny then small - sequential to avoid CUDA double-init segfault."""
+    global _wake_model, _main_model
     device = os.getenv("WHISPER_DEVICE", "cuda")
     compute = "float16" if device == "cuda" else "int8"
-    print("[STT] Downloading wake model (tiny, ~39MB)...")
+
+    print("[STT] Loading wake model (tiny)...")
     try:
         _wake_model = WhisperModel("tiny", device=device, compute_type=compute)
     except Exception:
         _wake_model = WhisperModel("tiny", device="cpu", compute_type="int8")
-    print("[STT] Wake model (tiny) ready")
+    print("[STT] Wake model ready")
 
-
-def _load_main_model():
-    global _main_model
-    device = os.getenv("WHISPER_DEVICE", "cuda")
-    compute = "float16" if device == "cuda" else "int8"
     size = os.getenv("WHISPER_MODEL", "small")
-    print(f"[STT] Downloading main model ({size})...")
+    print(f"[STT] Loading main model ({size})...")
     try:
         _main_model = WhisperModel(size, device=device, compute_type=compute)
     except Exception:
