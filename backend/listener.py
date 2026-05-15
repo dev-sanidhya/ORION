@@ -7,26 +7,21 @@ import wave
 import io
 from typing import Callable, Awaitable
 
-# Audio constants
 RATE = 16000
 CHUNK = 1024
 CHANNELS = 1
 
-# Clap detection
 CLAP_THRESHOLD = 3500
-CLAP_WINDOW = 0.8       # max seconds between two claps
-CLAP_MIN_GAP = 0.08     # min gap to avoid double-fire on one clap
+CLAP_WINDOW = 0.8
+CLAP_MIN_GAP = 0.08
 
-# Speech recording
 SILENCE_THRESHOLD = 400
-SILENCE_DURATION = 1.8   # seconds of silence to stop recording
+SILENCE_DURATION = 1.8
 MAX_RECORD_SECONDS = 15
 
-# Wake phrase detection
-WAKE_CLIP_SECONDS = 2.0   # length of each clip fed to wake detector
-WAKE_COOLDOWN = 3.0       # seconds to ignore after triggering
+WAKE_CLIP_CHUNKS = int(RATE / CHUNK * 2.0)   # 2 seconds of chunks
+WAKE_COOLDOWN = 3.0
 
-# Keyboard long-press
 SPACE_LONG_PRESS_SECONDS = 0.7
 
 
@@ -47,17 +42,18 @@ class AudioListener:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._last_trigger = 0.0
 
+        # Shared audio queue for the single capture thread
+        self._audio_chunks: list[bytes] = []
+        self._audio_lock = threading.Lock()
+
     def start(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
         self._running = True
 
-        # Thread 1: clap detection
-        threading.Thread(target=self._clap_thread, daemon=True, name="clap-listener").start()
+        # Single audio capture thread - avoids multiple PyAudio() init crash
+        threading.Thread(target=self._audio_capture_thread, daemon=True, name="audio-capture").start()
 
-        # Thread 2: wake phrase detection ("wake up" / "hey orion")
-        threading.Thread(target=self._wake_phrase_thread, daemon=True, name="wake-phrase").start()
-
-        # Thread 3: keyboard long-press Space
+        # Keyboard long-press Space
         threading.Thread(target=self._keyboard_thread, daemon=True, name="keyboard").start()
 
         print("[ORION] Listeners active: double-clap | say 'wake up' | hold Space")
@@ -66,48 +62,15 @@ class AudioListener:
         self._running = False
 
     def _fire(self):
-        """Thread-safe trigger - respects cooldown to avoid double-fires."""
         now = time.time()
         if now - self._last_trigger < WAKE_COOLDOWN:
             return
         self._last_trigger = now
         asyncio.run_coroutine_threadsafe(self.on_wake(), self._loop)
 
-    # ---- Clap detection --------------------------------------------------
+    # ---- Single audio capture thread - fans out to clap + wake detection ----
 
-    def _clap_thread(self):
-        pa = pyaudio.PyAudio()
-        stream = pa.open(
-            format=pyaudio.paInt16, channels=CHANNELS,
-            rate=RATE, input=True, frames_per_buffer=CHUNK,
-        )
-        last_clap = 0.0
-        print("[Clap] Listening for double-clap")
-
-        while self._running:
-            try:
-                data = stream.read(CHUNK, exception_on_overflow=False)
-                amp = int(np.abs(np.frombuffer(data, dtype=np.int16)).max())
-                if amp > CLAP_THRESHOLD:
-                    now = time.time()
-                    gap = now - last_clap
-                    if CLAP_MIN_GAP < gap < CLAP_WINDOW:
-                        print("[Clap] Double-clap detected!")
-                        last_clap = 0.0
-                        self._fire()
-                        time.sleep(1.0)
-                    else:
-                        last_clap = now
-            except Exception:
-                time.sleep(0.05)
-
-        stream.stop_stream()
-        stream.close()
-        pa.terminate()
-
-    # ---- Wake phrase detection -------------------------------------------
-
-    def _wake_phrase_thread(self):
+    def _audio_capture_thread(self):
         from stt import check_wake_phrase_sync
 
         pa = pyaudio.PyAudio()
@@ -115,30 +78,57 @@ class AudioListener:
             format=pyaudio.paInt16, channels=CHANNELS,
             rate=RATE, input=True, frames_per_buffer=CHUNK,
         )
-        frames_needed = int(RATE / CHUNK * WAKE_CLIP_SECONDS)
-        buf: list[bytes] = []
-        print("[Wake] Listening for 'wake up' / 'hey orion'")
+
+        last_clap = 0.0
+        wake_buf: list[bytes] = []
+
+        print("[Audio] Capture thread started")
 
         while self._running:
             try:
                 data = stream.read(CHUNK, exception_on_overflow=False)
-                buf.append(data)
-                if len(buf) >= frames_needed:
-                    clip = _pack_wav(buf)
-                    buf = buf[frames_needed // 2:]  # 50% overlap
-                    if check_wake_phrase_sync(clip):
-                        print("[Wake] Phrase detected!")
+
+                # Store latest chunks for speech recording
+                with self._audio_lock:
+                    self._audio_chunks.append(data)
+                    if len(self._audio_chunks) > int(RATE / CHUNK * 30):
+                        self._audio_chunks.pop(0)
+
+                amp = int(np.abs(np.frombuffer(data, dtype=np.int16)).max())
+
+                # --- Clap detection ---
+                if amp > CLAP_THRESHOLD:
+                    now = time.time()
+                    gap = now - last_clap
+                    if CLAP_MIN_GAP < gap < CLAP_WINDOW:
+                        print("[Clap] Double-clap!")
+                        last_clap = 0.0
                         self._fire()
-                        buf = []
+                        time.sleep(1.0)
+                    else:
+                        last_clap = now
+
+                # --- Wake phrase detection (every 2s, 50% overlap) ---
+                wake_buf.append(data)
+                if len(wake_buf) >= WAKE_CLIP_CHUNKS:
+                    clip = _pack_wav(wake_buf)
+                    wake_buf = wake_buf[WAKE_CLIP_CHUNKS // 2:]   # 50% overlap
+                    # Only check if wake model is ready
+                    if check_wake_phrase_sync(clip):
+                        print("[Wake] 'wake up' detected!")
+                        self._fire()
+                        wake_buf = []
                         time.sleep(WAKE_COOLDOWN)
-            except Exception:
-                time.sleep(0.1)
+
+            except Exception as e:
+                print(f"[Audio] Error: {e}")
+                time.sleep(0.05)
 
         stream.stop_stream()
         stream.close()
         pa.terminate()
 
-    # ---- Keyboard long-press Space ---------------------------------------
+    # ---- Keyboard long-press Space ----------------------------------------
 
     def _keyboard_thread(self):
         try:
@@ -160,23 +150,22 @@ class AudioListener:
                         held = time.time() - space_down_at
                         if held >= SPACE_LONG_PRESS_SECONDS and not fired:
                             fired = True
-                            print(f"[Keyboard] Space held {held:.2f}s - triggering")
+                            print(f"[Keyboard] Space held {held:.2f}s - wake!")
                             self._fire()
                     space_down_at = None
 
-            with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
-                print("[Keyboard] Long-press Space to activate")
+            with keyboard.Listener(on_press=on_press, on_release=on_release):
+                print("[Keyboard] Long-press Space active")
                 while self._running:
                     time.sleep(0.1)
-                listener.stop()
 
         except Exception as e:
-            print(f"[Keyboard] Listener failed: {e}")
+            print(f"[Keyboard] Failed: {e}")
 
-    # ---- Speech recording -----------------------------------------------
+    # ---- Speech recording (called from executor) -------------------------
 
     def record_speech(self) -> bytes:
-        """Blocking: record until silence detected. Run from an executor thread."""
+        """Blocking: opens a dedicated stream for recording until silence."""
         pa = pyaudio.PyAudio()
         stream = pa.open(
             format=pyaudio.paInt16, channels=CHANNELS,
@@ -190,7 +179,6 @@ class AudioListener:
             data = stream.read(CHUNK, exception_on_overflow=False)
             frames.append(data)
             amp = int(np.abs(np.frombuffer(data, dtype=np.int16)).max())
-
             if amp < SILENCE_THRESHOLD:
                 if silence_start is None:
                     silence_start = time.time()
