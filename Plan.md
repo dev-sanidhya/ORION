@@ -525,5 +525,39 @@ Features without keys stay silent (no crash), so partial config is fine.
 - Gmail unread chip (Tier 2 #9)
 - Spotify now playing (Tier 1 #3 - skipped in this batch; needs OAuth flow,
   will revisit)
-- Custom "Hey ORION" Porcupine model (vs current built-in "jarvis")
+
+---
+
+## v0.7.1 - Removed Porcupine + Notion (2026-05-15)
+
+Sanidhya can't get a Picovoice AccessKey (no company email), and explicitly
+asked to drop Notion. Both ripped:
+
+### Removed
+- `backend/tools/porcupine.py` deleted
+- `backend/tools/notion.py` deleted
+- `pvporcupine` from requirements.txt
+- Porcupine frame loop in `listener.py`
+- Notion import + idea-capture side-channel in `main.py`
+- Notion daily-log write in evening wrap
+- IDEAS CAPTURE block from brain.py system prompt
+
+### What still works
+- Calendar widget (Google Calendar ICS, no OAuth)
+- Typefully tweet posting + analytics in morning brief
+- Project switcher ("ORION, switch to <name>")
+- Memory search via WS
+- Multi-display wall mode
+- Toast stack (used by Typefully posting + project switching)
+- Clap + hold-Space + opt-in Whisper wake-phrase (`ORION_WAKE_PHRASE=1`)
+
+### Open question: wake-word replacement
+Porcupine was the recommended approach because of CPU footprint. Pending
+Sanidhya's choice, candidates without account/API requirements:
+- **openWakeWord** (MIT, no account, ONNX models, pre-trained "Hey Jarvis"
+  included). Cheap. Drop-in replacement.
+- **Sherpa-onnx keyword spotter** (also no account, lighter than Whisper).
+- Stay with clap + Space only.
+
+Recommendation: openWakeWord. Roughly the same CPU profile as Porcupine.
 - openwakeword "Hey ORION" hotword

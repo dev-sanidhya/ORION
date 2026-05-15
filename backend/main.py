@@ -26,7 +26,6 @@ from tools.memory import (
 from tools.weather import get_weather
 from tools import projects as projects_tool
 from tools import typefully as tf_tool
-from tools import notion as notion_tool
 from tools import calendar as cal_tool
 
 MEMORY_FILE = Path(__file__).parent / "db" / "memory.json"
@@ -201,18 +200,6 @@ async def handle_interaction(source: str = "clap"):
                 await save_conversation("user", user_text)
                 await broadcast({"type": "transcript", "role": "user", "content": user_text})
 
-                # ---- Side-channel: voice-driven ideas DB ----
-                # "ORION, idea: ..." / "save this idea ..." captures to Notion.
-                idea_match = re.match(
-                    r"\s*(?:orion[, ]+)?(?:save\s+(?:this\s+)?idea[: ]+|idea[: ]+|note(?:\s+this)?[: ]+)(.+)",
-                    user_text, re.IGNORECASE,
-                )
-                if idea_match and notion_tool.is_configured():
-                    idea_text = idea_match.group(1).strip()
-                    title = idea_text[:80]
-                    asyncio.create_task(notion_tool.append_idea(title, idea_text))
-                    await broadcast({"type": "toast", "text": "Idea saved to Notion"})
-
                 # ---- Side-channel: project switcher ----
                 proj_match = re.match(
                     r"\s*(?:orion[, ]+)?switch\s+to\s+([A-Za-z0-9_\-]+)",
@@ -376,27 +363,6 @@ async def maybe_evening_wrap():
             listener.muted = True
             await speak(wrap)
             listener.muted = False
-
-            # Persist the day to Notion if configured.
-            if notion_tool.is_configured():
-                try:
-                    result = subprocess.run(
-                        ["git", "-C", _active_path(), "log",
-                         "--since=midnight", "--pretty=format:%h %s"],
-                        capture_output=True, text=True, timeout=4,
-                    )
-                    commits = [l for l in result.stdout.strip().split("\n") if l]
-                    tweets_data = await tf_tool.recently_published(limit=10) \
-                        if await tf_tool.is_configured() else []
-                    tweet_texts = [
-                        (t.get("text") or t.get("content") or "")[:200]
-                        for t in tweets_data
-                    ]
-                    asyncio.create_task(
-                        notion_tool.append_daily_log(wrap, commits, tweet_texts)
-                    )
-                except Exception as e:
-                    print(f"[Notion daily] error: {e}")
         except Exception as e:
             print(f"[Evening Wrap] Error: {e}")
         finally:

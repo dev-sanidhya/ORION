@@ -45,10 +45,8 @@ class AudioListener:
         self.clap_threshold = CLAP_THRESHOLD
         self.current_amplitude: int = 0
         self.muted: bool = False  # suppresses clap+wake detection while TTS plays
-        # Legacy whisper-based wake loop (heavy, opt-in).
+        # Whisper-based wake phrase loop (heavy, opt-in via ORION_WAKE_PHRASE=1).
         self._wake_enabled: bool = os.getenv("ORION_WAKE_PHRASE", "0") == "1"
-        # Porcupine wake-word (~1% CPU). Loaded if PORCUPINE_ACCESS_KEY is set.
-        self._porcupine_ready: bool = False
 
     def start(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
@@ -61,12 +59,7 @@ class AudioListener:
         threading.Thread(target=self._keyboard_thread, daemon=True, name="keyboard").start()
 
         modes = ["double-clap", "hold Space"]
-        # Porcupine readiness is set inside the audio thread; we report it
-        # after a short window. For startup logging just describe configured.
-        from tools import porcupine
-        if porcupine.is_configured():
-            modes.insert(0, f"say '{os.getenv('PORCUPINE_KEYWORD', 'jarvis')}'")
-        elif self._wake_enabled:
+        if self._wake_enabled:
             modes.insert(1, "say 'wake up'")
         print(f"[ORION] Listeners active: {' | '.join(modes)}")
 
@@ -88,14 +81,6 @@ class AudioListener:
             from stt import check_wake_phrase_sync as _wake_check
             check_wake_phrase_sync = _wake_check
 
-        # Porcupine wake-word - lazily initialized in the audio thread so any
-        # PortAudio/CTypes setup happens on the same thread that reads frames.
-        from tools import porcupine
-        porc_ready = porcupine.load()
-        self._porcupine_ready = porc_ready
-        porc_frame = porcupine.get_frame_length() if porc_ready else 0
-        porc_buffer: list[int] = []
-
         pa = pyaudio.PyAudio()
         stream = pa.open(
             format=pyaudio.paInt16, channels=CHANNELS,
@@ -108,8 +93,7 @@ class AudioListener:
         # update on every 64ms audio chunk. Saves on store re-renders too.
         amp_decim = 0
 
-        print(f"[Audio] Capture thread started "
-              f"(porcupine={porc_ready}, whisper_wake={self._wake_enabled})")
+        print(f"[Audio] Capture thread started (whisper_wake={self._wake_enabled})")
 
         while self._running:
             try:
@@ -135,22 +119,7 @@ class AudioListener:
                     else:
                         last_clap = now
 
-                # --- Porcupine wake-word (cheap, default when configured) ---
-                if porc_ready:
-                    samples = np.frombuffer(data, dtype=np.int16).tolist()
-                    porc_buffer.extend(samples)
-                    # Feed Porcupine in fixed-size frames it expects.
-                    while len(porc_buffer) >= porc_frame:
-                        frame = porc_buffer[:porc_frame]
-                        porc_buffer = porc_buffer[porc_frame:]
-                        if porcupine.process(frame):
-                            print("[Porcupine] wake-word detected!")
-                            porc_buffer = []
-                            self._fire()
-                            time.sleep(WAKE_COOLDOWN)
-                            break
-
-                # --- Legacy Whisper wake-phrase (opt-in heavy fallback) ---
+                # --- Whisper wake-phrase (opt-in heavy fallback) ---
                 if check_wake_phrase_sync is not None:
                     wake_buf.append(data)
                     if len(wake_buf) >= WAKE_CLIP_CHUNKS:

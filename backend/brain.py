@@ -41,10 +41,6 @@ MEMORY & SEARCH:
 - For semantic search, the SQLite DB at {ORION_DIR}/backend/db/orion.db has a `conversations` table.
   Use Bash with: sqlite3 "{ORION_DIR}/backend/db/orion.db" "SELECT role, content, timestamp FROM conversations WHERE content LIKE '%keyword%' ORDER BY id DESC LIMIT 10;"
 
-IDEAS CAPTURE:
-- If Sanidhya says "idea: ..." or "save this idea ...", the backend already auto-saves it to Notion.
-- Don't repeat the idea back verbatim - just acknowledge: "Logged."
-
 PROJECTS:
 - Active project is tracked in the SQLite facts table. Sanidhya can say "switch to <name>" - the backend handles it.
 - Available projects live in {PORTFOLIO_DIR}. Each is its own git repo.
