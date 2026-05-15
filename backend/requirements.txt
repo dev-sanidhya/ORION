@@ -10,3 +10,5 @@ aiosqlite==0.20.0
 httpx==0.27.2
 feedparser==6.0.11
 pyttsx3==2.98
+groq==1.2.0
+pynput==1.8.2

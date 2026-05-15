@@ -16,12 +16,10 @@ export default function Dashboard() {
   useEffect(() => {
     orionSocket.connect();
 
-    // Keyboard shortcut: Ctrl+Space to trigger
+    // Long press Space is handled by the backend pynput listener
+    // This is just a visual fallback click handler kept for the orb
     const handleKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.code === "Space") {
-        e.preventDefault();
-        orionSocket.trigger();
-      }
+      if (e.code === "Space") e.preventDefault(); // prevent page scroll
     };
     window.addEventListener("keydown", handleKey);
     return () => {
@@ -134,7 +132,9 @@ function ShortcutsHint() {
     <div className="flex gap-4 text-xs text-orion-dim tracking-widest">
       <span>DOUBLE CLAP</span>
       <span className="text-orion-border">|</span>
-      <span>CTRL+SPACE</span>
+      <span>HOLD SPACE</span>
+      <span className="text-orion-border">|</span>
+      <span>"WAKE UP"</span>
       <span className="text-orion-border">|</span>
       <span>CLICK ORB</span>
     </div>
