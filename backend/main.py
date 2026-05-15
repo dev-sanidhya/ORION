@@ -19,8 +19,15 @@ from stt import load_model, transcribe
 import re
 from tts import speak, enqueue, start_tts_engine, stop_tts_engine
 from tools.location import get_location
-from tools.memory import init_db, save_conversation, get_pending_reminders, get_recent_conversations
+from tools.memory import (
+    init_db, save_conversation, get_pending_reminders, get_recent_conversations,
+    search_conversations,
+)
 from tools.weather import get_weather
+from tools import projects as projects_tool
+from tools import typefully as tf_tool
+from tools import notion as notion_tool
+from tools import calendar as cal_tool
 
 MEMORY_FILE = Path(__file__).parent / "db" / "memory.json"
 
@@ -44,6 +51,11 @@ _session_history: list[dict] = []
 
 PORTFOLIO_DIR = os.getenv("PORTFOLIO_DIR", r"C:\Users\shish\Desktop\PORTFOLIO")
 ORION_DIR = os.path.join(PORTFOLIO_DIR, "ORION")
+_active_project: str = "ORION"
+
+
+def _active_path() -> str:
+    return projects_tool.project_path(_active_project)
 
 _widget_blur_task: asyncio.Task | None = None
 _current_state: str = "idle"
@@ -82,7 +94,7 @@ def _detect_widget(user_text: str, response: str) -> tuple[str | None, dict]:
     if any(w in combined for w in ["commit", "git log", "pushed", "shipped", "deployed", "branch", "what did i push", "recent commits"]):
         try:
             result = subprocess.run(
-                ["git", "-C", ORION_DIR, "log", "--oneline", "-8", "--format=%h %s (%cr)"],
+                ["git", "-C", _active_path(), "log", "--oneline", "-8", "--format=%h %s (%cr)"],
                 capture_output=True, text=True, timeout=3
             )
             commits = [l for l in result.stdout.strip().split("\n") if l] if result.returncode == 0 else []
@@ -189,6 +201,28 @@ async def handle_interaction(source: str = "clap"):
                 await save_conversation("user", user_text)
                 await broadcast({"type": "transcript", "role": "user", "content": user_text})
 
+                # ---- Side-channel: voice-driven ideas DB ----
+                # "ORION, idea: ..." / "save this idea ..." captures to Notion.
+                idea_match = re.match(
+                    r"\s*(?:orion[, ]+)?(?:save\s+(?:this\s+)?idea[: ]+|idea[: ]+|note(?:\s+this)?[: ]+)(.+)",
+                    user_text, re.IGNORECASE,
+                )
+                if idea_match and notion_tool.is_configured():
+                    idea_text = idea_match.group(1).strip()
+                    title = idea_text[:80]
+                    asyncio.create_task(notion_tool.append_idea(title, idea_text))
+                    await broadcast({"type": "toast", "text": "Idea saved to Notion"})
+
+                # ---- Side-channel: project switcher ----
+                proj_match = re.match(
+                    r"\s*(?:orion[, ]+)?switch\s+to\s+([A-Za-z0-9_\-]+)",
+                    user_text, re.IGNORECASE,
+                )
+                if proj_match:
+                    name = proj_match.group(1)
+                    if await _switch_project(name):
+                        await broadcast({"type": "toast", "text": f"Active project: {name}"})
+
                 # Stream response - TTS starts on first complete sentence, no waiting
                 full_response = ""
                 buffer = ""
@@ -252,6 +286,30 @@ async def handle_interaction(source: str = "clap"):
 
 # ---- Context refresh ------------------------------------------------------
 
+async def _switch_project(name: str) -> bool:
+    global _active_project
+    available = projects_tool.list_projects()
+    # Allow case-insensitive match
+    match = next((p for p in available if p.lower() == name.lower()), None)
+    if not match:
+        return False
+    if not await projects_tool.set_active(match):
+        return False
+    _active_project = match
+    await broadcast({"type": "active_project", "name": match})
+    return True
+
+
+async def refresh_calendar():
+    if not cal_tool.is_configured():
+        return
+    try:
+        events = await cal_tool.upcoming_events(limit=5, hours_ahead=24)
+        await broadcast({"type": "calendar", "events": events})
+    except Exception as e:
+        print(f"[Calendar] refresh error: {e}")
+
+
 async def refresh_context():
     global _context
     try:
@@ -283,6 +341,9 @@ async def maybe_morning_brief():
     if 6 <= hour <= 10 and not _morning_briefed:
         _morning_briefed = True
         try:
+            # Pull X analytics into context so the brief can include it.
+            tweets = await tf_tool.recently_published(limit=5) if await tf_tool.is_configured() else []
+            _context["recent_tweets"] = tweets
             brief = await build_morning_brief(_context)
             await save_conversation("orion", brief)
             await broadcast({"type": "transcript", "role": "orion", "content": brief})
@@ -315,6 +376,27 @@ async def maybe_evening_wrap():
             listener.muted = True
             await speak(wrap)
             listener.muted = False
+
+            # Persist the day to Notion if configured.
+            if notion_tool.is_configured():
+                try:
+                    result = subprocess.run(
+                        ["git", "-C", _active_path(), "log",
+                         "--since=midnight", "--pretty=format:%h %s"],
+                        capture_output=True, text=True, timeout=4,
+                    )
+                    commits = [l for l in result.stdout.strip().split("\n") if l]
+                    tweets_data = await tf_tool.recently_published(limit=10) \
+                        if await tf_tool.is_configured() else []
+                    tweet_texts = [
+                        (t.get("text") or t.get("content") or "")[:200]
+                        for t in tweets_data
+                    ]
+                    asyncio.create_task(
+                        notion_tool.append_daily_log(wrap, commits, tweet_texts)
+                    )
+                except Exception as e:
+                    print(f"[Notion daily] error: {e}")
         except Exception as e:
             print(f"[Evening Wrap] Error: {e}")
         finally:
@@ -352,6 +434,7 @@ async def periodic_tasks():
 
         if now.minute % 10 == 0:
             await refresh_context()
+            await refresh_calendar()
 
         await maybe_morning_brief()
         await maybe_evening_wrap()
@@ -390,10 +473,13 @@ listener = AudioListener(on_wake=on_wake)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _active_project
     await init_db()
     start_tts_engine()
     load_model()
+    _active_project = await projects_tool.get_active()
     await refresh_context()
+    await refresh_calendar()
 
     loop = asyncio.get_event_loop()
     await asyncio.sleep(2)
@@ -402,7 +488,7 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(periodic_tasks())
     asyncio.create_task(amplitude_broadcaster())
 
-    print("[ORION] Online. Double clap, hold Space, or say 'wake up' to activate.")
+    print(f"[ORION] Online. Active project: {_active_project}")
     yield
 
     listener.stop()
@@ -437,6 +523,20 @@ async def ws_endpoint(websocket: WebSocket):
             "city": _context["city"], "country": _context.get("country", ""),
         }})
     await websocket.send_json({"type": "state", "state": "idle"})
+
+    # Initial sync of feature-specific state.
+    await websocket.send_json({
+        "type": "active_project",
+        "name": _active_project,
+        "available": projects_tool.list_projects(),
+    })
+    if cal_tool.is_configured():
+        try:
+            events = await cal_tool.upcoming_events(limit=5, hours_ahead=24)
+            await websocket.send_json({"type": "calendar", "events": events})
+        except Exception:
+            pass
+
     asyncio.create_task(maybe_morning_brief())
 
     try:
@@ -455,6 +555,25 @@ async def ws_endpoint(websocket: WebSocket):
 
             elif msg_type == "ping":
                 await websocket.send_json({"type": "pong"})
+
+            elif msg_type == "post_tweet":
+                text = str(data.get("text", "")).strip()
+                if text:
+                    result = await tf_tool.create_draft(text)
+                    await websocket.send_json({"type": "post_tweet_result", **result})
+
+            elif msg_type == "set_project":
+                name = str(data.get("name", "")).strip()
+                ok = await _switch_project(name)
+                await websocket.send_json({"type": "set_project_result", "ok": ok, "name": name})
+
+            elif msg_type == "search_memory":
+                q = str(data.get("query", "")).strip()
+                results = await search_conversations(q, limit=10)
+                await websocket.send_json({"type": "memory_results", "query": q, "results": results})
+
+            elif msg_type == "refresh_calendar":
+                await refresh_calendar()
 
     except WebSocketDisconnect:
         connected_clients.discard(websocket)
