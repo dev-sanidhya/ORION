@@ -2,7 +2,7 @@ import asyncio
 import os
 import json
 from datetime import datetime
-import anthropic
+import httpx
 from tools.weather import get_weather
 from tools.location import get_location
 from tools.memory import (
@@ -10,28 +10,32 @@ from tools.memory import (
     add_reminder, get_pending_reminders
 )
 from tools.news import get_news_summary
-from tools.git_tools import get_recent_commits, get_git_status, list_projects
+from tools.git_tools import get_recent_commits
 
-# Singleton client - OAuth token auth, reused across all requests
-_client: anthropic.Anthropic | None = None
-
-def get_client() -> anthropic.Anthropic:
-    global _client
-    if _client is None:
-        token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
-        if not token:
-            raise RuntimeError(
-                "CLAUDE_CODE_OAUTH_TOKEN not set. Run: claude setup-token"
-            )
-        _client = anthropic.Anthropic(
-            api_key=token,
-            base_url="https://api.claude.ai/api",
-        )
-        print("[Brain] Anthropic client initialized via OAuth")
-    return _client
-
-
+API_URL = "https://api.anthropic.com/v1/messages"
 MODEL = os.getenv("ORION_MODEL", "claude-sonnet-4-6")
+
+_token: str | None = None
+_http: httpx.AsyncClient | None = None
+
+
+def get_http() -> httpx.AsyncClient:
+    global _token, _http
+    if _http is None:
+        _token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip()
+        if not _token:
+            raise RuntimeError("CLAUDE_CODE_OAUTH_TOKEN not set. Run: claude setup-token")
+        _http = httpx.AsyncClient(
+            headers={
+                "Authorization": f"Bearer {_token}",
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            timeout=60.0,
+        )
+        print("[Brain] HTTP client initialized via OAuth Bearer")
+    return _http
+
 
 TOOLS = [
     {
@@ -155,12 +159,11 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
             return json.dumps({"headlines": summary})
 
         elif name == "get_git_log":
-            import os as _os
             project = tool_input.get("project", "")
             n = tool_input.get("n", 5)
-            if project and not _os.path.isabs(project):
-                portfolio = _os.getenv("PORTFOLIO_DIR", r"C:\Users\shish\Desktop\PORTFOLIO")
-                project = _os.path.join(portfolio, project)
+            if project and not os.path.isabs(project):
+                portfolio = os.getenv("PORTFOLIO_DIR", r"C:\Users\shish\Desktop\PORTFOLIO")
+                project = os.path.join(portfolio, project)
             commits = get_recent_commits(project or None, n)
             return json.dumps(commits)
 
@@ -171,7 +174,6 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
 
 
 def _build_system_prompt(context: dict) -> list:
-    """Returns system as a list with cache_control on the static block."""
     now = datetime.now()
     date_str = now.strftime("%A, %d %B %Y")
     time_str = now.strftime("%I:%M %p")
@@ -182,7 +184,6 @@ def _build_system_prompt(context: dict) -> list:
     pending_reminders = context.get("pending_reminders", [])
     reminders_str = json.dumps(pending_reminders) if pending_reminders else "none"
 
-    # Static personality block - cached so it doesn't burn tokens every call
     static_block = {
         "type": "text",
         "text": (
@@ -198,7 +199,6 @@ def _build_system_prompt(context: dict) -> list:
         "cache_control": {"type": "ephemeral"},
     }
 
-    # Dynamic context block - refreshed each call, not cached
     dynamic_block = {
         "type": "text",
         "text": (
@@ -216,44 +216,49 @@ def _build_system_prompt(context: dict) -> list:
     return [static_block, dynamic_block]
 
 
+async def _call_api(messages: list, system: list) -> dict:
+    http = get_http()
+    body = {
+        "model": MODEL,
+        "max_tokens": 512,
+        "system": system,
+        "tools": TOOLS,
+        "messages": messages,
+    }
+    resp = await http.post(API_URL, json=body)
+    if resp.status_code != 200:
+        raise RuntimeError(f"API error {resp.status_code}: {resp.text[:300]}")
+    return resp.json()
+
+
 async def process(user_message: str, context: dict) -> str:
-    client = get_client()
     system = _build_system_prompt(context)
     messages = [{"role": "user", "content": user_message}]
-    loop = asyncio.get_event_loop()
 
     while True:
-        response = await loop.run_in_executor(
-            None,
-            lambda: client.messages.create(
-                model=MODEL,
-                max_tokens=512,
-                system=system,
-                tools=TOOLS,
-                messages=messages,
-                extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
-            ),
-        )
+        data = await _call_api(messages, system)
+        stop_reason = data.get("stop_reason")
+        content = data.get("content", [])
 
-        if response.stop_reason == "end_turn":
-            for block in response.content:
-                if block.type == "text":
-                    return block.text.strip()
+        if stop_reason == "end_turn":
+            for block in content:
+                if block.get("type") == "text":
+                    return block["text"].strip()
             return ""
 
-        if response.stop_reason == "tool_use":
+        if stop_reason == "tool_use":
             tool_results = []
-            for block in response.content:
-                if block.type == "tool_use":
-                    print(f"[Brain] Tool: {block.name}({block.input})")
-                    result = await _execute_tool(block.name, block.input)
+            for block in content:
+                if block.get("type") == "tool_use":
+                    print(f"[Brain] Tool: {block['name']}({block['input']})")
+                    result = await _execute_tool(block["name"], block["input"])
                     tool_results.append({
                         "type": "tool_result",
-                        "tool_use_id": block.id,
+                        "tool_use_id": block["id"],
                         "content": result,
                     })
 
-            messages.append({"role": "assistant", "content": response.content})
+            messages.append({"role": "assistant", "content": content})
             messages.append({"role": "user", "content": tool_results})
             continue
 

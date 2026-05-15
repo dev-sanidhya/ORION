@@ -82,7 +82,9 @@ async def handle_interaction(source: str = "clap"):
             await speak(response)
 
         except Exception as e:
+            import traceback
             print(f"[ORION] Interaction error: {e}")
+            traceback.print_exc()
             await broadcast({"type": "transcript", "role": "orion", "content": "Something went wrong on my end, boss."})
 
         finally:
