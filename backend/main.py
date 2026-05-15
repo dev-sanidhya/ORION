@@ -23,6 +23,9 @@ from tools.weather import get_weather
 
 MEMORY_FILE = Path(__file__).parent / "db" / "memory.json"
 
+import re
+import subprocess
+
 SLEEP_PHRASES = {
     "sleep", "that's all", "goodnight", "goodbye", "go to sleep",
     "stand by", "dismiss", "stop listening", "that will be all",
@@ -38,6 +41,55 @@ _session_history: list[dict] = []
 
 
 # ---- Memory (JSON) -------------------------------------------------------
+
+PORTFOLIO_DIR = os.getenv("PORTFOLIO_DIR", r"C:\Users\shish\Desktop\PORTFOLIO")
+ORION_DIR = os.path.join(PORTFOLIO_DIR, "ORION")
+
+_widget_blur_task: asyncio.Task | None = None
+
+
+def _extract_tweet(response: str) -> tuple[str, str | None]:
+    """Returns (cleaned_response, tweet_text_or_None)."""
+    match = re.search(r'\[TWEET\](.*?)\[/TWEET\]', response, re.DOTALL | re.IGNORECASE)
+    if match:
+        tweet = match.group(1).strip()
+        cleaned = re.sub(r'\[TWEET\].*?\[/TWEET\]', '', response, flags=re.DOTALL | re.IGNORECASE).strip()
+        return cleaned, tweet
+    return response, None
+
+
+def _detect_widget(user_text: str, response: str) -> tuple[str | None, dict]:
+    combined = (user_text + " " + response).lower()
+
+    if any(w in combined for w in ["weather", "temperature", "°c", "forecast", "rain", "sunny", "humid", "wind", "feels like"]):
+        return "weather", {}
+
+    if any(w in combined for w in ["commit", "git log", "pushed", "shipped", "deployed", "branch", "what did i push", "recent commits"]):
+        try:
+            result = subprocess.run(
+                ["git", "-C", ORION_DIR, "log", "--oneline", "-8", "--format=%h %s (%cr)"],
+                capture_output=True, text=True, timeout=3
+            )
+            commits = [l for l in result.stdout.strip().split("\n") if l] if result.returncode == 0 else []
+            return "git", {"commits": commits}
+        except Exception:
+            return "git", {"commits": []}
+
+    if any(w in combined for w in ["news", "headline", "happened today", "what's happening", "latest"]):
+        return "news", {}
+
+    return None, {}
+
+
+async def _schedule_widget_blur(delay: float = 12.0):
+    global _widget_blur_task
+    if _widget_blur_task and not _widget_blur_task.done():
+        _widget_blur_task.cancel()
+    async def _blur():
+        await asyncio.sleep(delay)
+        await broadcast({"type": "widget_blur"})
+    _widget_blur_task = asyncio.create_task(_blur())
+
 
 def _load_memory() -> list[dict]:
     try:
@@ -133,11 +185,24 @@ async def handle_interaction(source: str = "clap"):
                 # Get response
                 response = await process(user_text, _context, _session_history)
 
+                # Extract tweet if present, clean response
+                response, tweet_text = _extract_tweet(response)
+
                 # Log + broadcast ORION turn
                 _session_history.append({"role": "orion", "content": response})
                 _save_memory({"timestamp": datetime.now().isoformat(), "role": "orion", "content": response})
                 await save_conversation("orion", response)
                 await broadcast({"type": "transcript", "role": "orion", "content": response})
+
+                # Widget focus: tweet takes priority, then keyword detection
+                if tweet_text:
+                    await broadcast({"type": "widget_focus", "widget": "tweet", "data": {"text": tweet_text}})
+                    await _schedule_widget_blur(20.0)
+                else:
+                    widget, data = _detect_widget(user_text, response)
+                    if widget:
+                        await broadcast({"type": "widget_focus", "widget": widget, "data": data})
+                        await _schedule_widget_blur(12.0)
 
                 await set_state("speaking")
                 await speak(response)

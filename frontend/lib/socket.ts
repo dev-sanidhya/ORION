@@ -51,6 +51,12 @@ class OrionSocket {
           case "amplitude":
             store.setAmplitude(msg.value);
             break;
+          case "widget_focus":
+            store.setActiveWidget(msg.widget, msg.data ?? {});
+            break;
+          case "widget_blur":
+            store.setActiveWidget(null);
+            break;
         }
       } catch (e) {
         console.error("[ORION] Bad WS message", e);

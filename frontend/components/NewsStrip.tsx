@@ -26,7 +26,7 @@ async function fetchRSS(url: string): Promise<NewsItem[]> {
   }
 }
 
-export default function NewsStrip() {
+export default function NewsStrip({ highlight = false }: { highlight?: boolean }) {
   const [headlines, setHeadlines] = useState<NewsItem[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [activeTab, setActiveTab] = useState(0);
@@ -55,7 +55,13 @@ export default function NewsStrip() {
   }, [headlines]);
 
   return (
-    <div className="glow-border rounded-sm bg-orion-surface border border-orion-border flex flex-col h-full overflow-hidden">
+    <div
+      className="glow-border rounded-sm bg-orion-surface flex flex-col h-full overflow-hidden transition-all duration-300"
+      style={{
+        border: highlight ? "1px solid #00D4FF66" : "1px solid var(--orion-border, #1a3040)",
+        boxShadow: highlight ? "0 0 20px #00D4FF18" : undefined,
+      }}
+    >
       {/* Header with tabs */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-orion-border">
         <span className="text-xs text-orion-cyan tracking-widest">INTEL FEED</span>

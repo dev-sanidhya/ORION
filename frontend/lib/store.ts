@@ -29,6 +29,8 @@ interface OrionStore {
   connected: boolean;
   amplitude: number;
   clapThreshold: number;
+  activeWidget: string | null;
+  widgetData: Record<string, unknown>;
 
   setState: (s: AssistantState) => void;
   addTranscript: (role: "user" | "orion", content: string) => void;
@@ -37,6 +39,7 @@ interface OrionStore {
   setConnected: (v: boolean) => void;
   setAmplitude: (v: number) => void;
   setClapThreshold: (v: number) => void;
+  setActiveWidget: (widget: string | null, data?: Record<string, unknown>) => void;
 }
 
 export const useOrionStore = create<OrionStore>((set) => ({
@@ -47,6 +50,8 @@ export const useOrionStore = create<OrionStore>((set) => ({
   connected: false,
   amplitude: 0,
   clapThreshold: 3500,
+  activeWidget: null,
+  widgetData: {},
 
   setState: (s) => set({ state: s }),
 
@@ -63,4 +68,5 @@ export const useOrionStore = create<OrionStore>((set) => ({
   setConnected: (v) => set({ connected: v }),
   setAmplitude: (v) => set({ amplitude: v }),
   setClapThreshold: (v) => set({ clapThreshold: v }),
+  setActiveWidget: (widget, data = {}) => set({ activeWidget: widget, widgetData: data }),
 }));

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { AnimatePresence } from "framer-motion";
 import { orionSocket } from "@/lib/socket";
 import { useOrionStore } from "@/lib/store";
 import Orb from "@/components/Orb";
@@ -8,9 +9,12 @@ import WeatherCard from "@/components/WeatherCard";
 import TranscriptFeed from "@/components/TranscriptFeed";
 import NewsStrip from "@/components/NewsStrip";
 import Waveform from "@/components/Waveform";
+import GitPanel from "@/components/GitPanel";
+import TweetPreview from "@/components/TweetPreview";
 
 export default function Dashboard() {
   const connected = useOrionStore((s) => s.connected);
+  const activeWidget = useOrionStore((s) => s.activeWidget);
   const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
@@ -62,20 +66,29 @@ export default function Dashboard() {
         {/* Left column */}
         <div className="col-span-3 flex flex-col gap-3 min-h-0">
           <WeatherCard />
-          <ActiveProjectTile />
+          <AnimatePresence mode="wait">
+            {activeWidget === "git" ? (
+              <GitPanel key="git" />
+            ) : (
+              <ActiveProjectTile key="project" />
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Center */}
         <div className="col-span-5 flex flex-col items-center justify-center gap-4">
           <Orb />
           <Waveform />
-          <ShortcutsHint />
+          <AnimatePresence>
+            {activeWidget === "tweet" && <TweetPreview key="tweet" />}
+          </AnimatePresence>
+          {activeWidget !== "tweet" && <ShortcutsHint />}
         </div>
 
         {/* Right column */}
         <div className="col-span-4 grid grid-rows-2 gap-3 min-h-0">
           <TranscriptFeed />
-          <NewsStrip />
+          <NewsStrip highlight={activeWidget === "news"} />
         </div>
       </div>
 
