@@ -43,6 +43,7 @@ class AudioListener:
         self._last_trigger = 0.0
         self.clap_threshold = CLAP_THRESHOLD
         self.current_amplitude: int = 0
+        self.muted: bool = False  # suppresses clap+wake detection while TTS plays
 
         # Shared audio queue for the single capture thread
         self._audio_chunks: list[bytes] = []
@@ -98,6 +99,9 @@ class AudioListener:
 
                 amp = int(np.abs(np.frombuffer(data, dtype=np.int16)).max())
                 self.current_amplitude = amp
+
+                if self.muted:
+                    continue
 
                 # --- Clap detection ---
                 if amp > self.clap_threshold:

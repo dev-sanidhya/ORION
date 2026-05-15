@@ -129,7 +129,7 @@ def _save_memory(entry: dict):
 
 async def broadcast(payload: dict):
     dead = set()
-    for ws in connected_clients:
+    for ws in list(connected_clients):
         try:
             await ws.send_json(payload)
         except Exception:
@@ -228,9 +228,11 @@ async def handle_interaction(source: str = "clap"):
                         await broadcast({"type": "widget_focus", "widget": widget, "data": data})
                         await _schedule_widget_blur(12.0)
 
-                # Wait for all TTS to finish before looping back to listen
+                # Mute listener while TTS plays so speaker audio can't retrigger
                 if tts_events:
+                    listener.muted = True
                     await tts_events[-1].wait()
+                    listener.muted = False
                 # Loop back to silent listening
 
         except Exception as e:
@@ -282,10 +284,13 @@ async def maybe_morning_brief():
             await save_conversation("orion", brief)
             await broadcast({"type": "transcript", "role": "orion", "content": brief})
             await set_state("speaking")
+            listener.muted = True
             await speak(brief)
+            listener.muted = False
         except Exception as e:
             print(f"[Morning Brief] Error: {e}")
         finally:
+            listener.muted = False
             await set_state("idle")
 
 
@@ -304,10 +309,13 @@ async def maybe_evening_wrap():
             await save_conversation("orion", wrap)
             await broadcast({"type": "transcript", "role": "orion", "content": wrap})
             await set_state("speaking")
+            listener.muted = True
             await speak(wrap)
+            listener.muted = False
         except Exception as e:
             print(f"[Evening Wrap] Error: {e}")
         finally:
+            listener.muted = False
             await set_state("idle")
 
 
@@ -349,9 +357,12 @@ async def periodic_tasks():
                 nudge = "Boss, you've been heads-down for 90 minutes. Consider taking a break."
                 await broadcast({"type": "transcript", "role": "orion", "content": nudge})
                 try:
+                    listener.muted = True
                     await speak(nudge)
                 except Exception:
                     pass
+                finally:
+                    listener.muted = False
 
 
 # ---- Listener glue --------------------------------------------------------
